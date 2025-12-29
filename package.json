@@ -1,0 +1,28 @@
+{
+  "name": "loup-garou",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "nuxi typecheck",
+    "test": "tsx tests/game-simulation.test.ts"
+  },
+  "dependencies": {
+    "@nuxt/ui": "^4.3.0",
+    "@nuxtjs/supabase": "^2.0.3",
+    "nuxt": "^4.2.2",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.4.1",
+    "typescript": "^5.7.3",
+    "tsx": "^4.19.2"
+  }
+}

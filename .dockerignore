@@ -1,0 +1,44 @@
+# Dependencies
+node_modules
+
+# Build output
+.output
+.nuxt
+dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test files
+tests/
+*.test.ts
+*.spec.ts
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Claude
+.claude/
+CLAUDE.md
