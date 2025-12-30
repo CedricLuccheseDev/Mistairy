@@ -21,6 +21,9 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   supabase: {
+    url: process.env.SUPABASE_URL,
+    key: process.env.SUPABASE_KEY,
+    serviceKey: process.env.SUPABASE_SECRET_KEY,
     types: false,
     redirectOptions: {
       login: '/',
