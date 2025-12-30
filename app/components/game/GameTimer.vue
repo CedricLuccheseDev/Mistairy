@@ -49,11 +49,16 @@ watch(() => props.endAt, () => {
 
 <template>
   <div
-    v-if="timeLeft > 0"
-    class="text-center py-2 px-4 rounded-full inline-flex items-center gap-2"
-    :class="isLow ? 'bg-red-500/20 text-red-400 animate-pulse' : 'bg-gray-800 text-gray-300'"
+    class="text-center py-2 px-4 rounded-full inline-flex items-center gap-2 transition-all duration-300"
+    :class="[
+      timeLeft <= 0
+        ? 'bg-neutral-800/50 text-neutral-500 border border-neutral-700/30'
+        : isLow
+          ? 'bg-red-500/30 text-red-400 border border-red-500/50 animate-heartbeat'
+          : 'bg-neutral-800/80 text-neutral-300 border border-neutral-700/50'
+    ]"
   >
-    <UIcon name="i-heroicons-clock" class="w-4 h-4" />
-    <span class="font-mono font-semibold">{{ formattedTime }}</span>
+    <UIcon name="i-heroicons-clock" class="w-4 h-4" :class="isLow && 'animate-pulse'" />
+    <span class="font-mono font-bold text-lg">{{ formattedTime }}</span>
   </div>
 </template>

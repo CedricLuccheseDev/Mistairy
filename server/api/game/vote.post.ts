@@ -1,5 +1,5 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
 import { checkVictory, getVictoryMessage, getPhaseEndTime, getDefaultSettings } from '../../game'
 
 export default defineEventHandler(async (event) => {
@@ -141,15 +141,30 @@ async function resolveVote(
     if (eliminated) {
       message = `Le village a décidé d'éliminer ${eliminated.name}.`
 
-      // Gestion du chasseur
+      // Gestion du chasseur - transition vers phase chasseur
       if (eliminated.role === 'hunter') {
+        await client.from('game_events').insert({
+          game_id: game.id,
+          event_type: 'vote_result',
+          message,
+          data: { eliminated: eliminatedId, votes: targetCounts }
+        })
+
         await client.from('game_events').insert({
           game_id: game.id,
           event_type: 'hunter_death',
           message: `${eliminated.name} était le chasseur ! Il peut emporter quelqu'un avec lui.`,
           data: { hunterId: eliminatedId }
         })
-        // TODO: Phase spéciale chasseur
+
+        // Transition vers la phase chasseur
+        await client.from('games').update({
+          status: 'hunter',
+          hunter_target_pending: eliminatedId,
+          phase_end_at: new Date(Date.now() + 30000).toISOString() // 30 secondes pour tirer
+        }).eq('id', game.id)
+
+        return // La suite sera gérée par hunter-action
       }
     }
   }
@@ -170,7 +185,11 @@ async function resolveVote(
   const winner = checkVictory(remainingPlayers || [])
 
   if (winner) {
-    await client.from('games').update({ status: 'finished', winner }).eq('id', game.id)
+    await client.from('games').update({
+      status: 'finished',
+      winner,
+      phase_end_at: null
+    }).eq('id', game.id)
 
     await client.from('game_events').insert({
       game_id: game.id,
@@ -181,7 +200,7 @@ async function resolveVote(
   }
   else {
     // Passer à la nuit suivante
-    const settings = (game.settings as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
+    const settings = (game.settings as unknown as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
     const phaseEndAt = getPhaseEndTime(settings, 'night')
 
     await client.from('games').update({

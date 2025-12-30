@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
+import type { Database } from '#shared/types/database.types'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -7,6 +7,12 @@ type GameEvent = Database['public']['Tables']['game_events']['Row']
 
 export function useGame(gameCode: string) {
   const client = useSupabaseClient<Database>()
+  const { getPlayerId } = usePlayerStorage()
+
+  /* ═══════════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════════ */
+
   const game = ref<Game | null>(null)
   const players = ref<Player[]>([])
   const currentPlayer = ref<Player | null>(null)
@@ -15,6 +21,10 @@ export function useGame(gameCode: string) {
   const error = ref<string | null>(null)
 
   let channel: RealtimeChannel | null = null
+
+  /* ═══════════════════════════════════════════
+     FETCH FUNCTIONS
+     ═══════════════════════════════════════════ */
 
   async function fetchGame() {
     const { data, error: fetchError } = await client
@@ -25,7 +35,6 @@ export function useGame(gameCode: string) {
 
     if (fetchError || !data) {
       error.value = 'Partie introuvable'
-      // Rediriger vers l'accueil si la partie n'existe pas
       navigateTo('/')
       return
     }
@@ -45,8 +54,7 @@ export function useGame(gameCode: string) {
     if (data) {
       players.value = data
 
-      const playerId = localStorage.getItem('playerId')
-
+      const playerId = getPlayerId()
       if (playerId) {
         currentPlayer.value = data.find(p => p.id === playerId) || null
       }
@@ -67,65 +75,80 @@ export function useGame(gameCode: string) {
     }
   }
 
+  /* ═══════════════════════════════════════════
+     REALTIME SUBSCRIPTIONS
+     ═══════════════════════════════════════════ */
+
   function subscribeToChanges() {
     if (!game.value) return
 
-    channel = client
-      .channel(`game:${game.value.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'games',
-          filter: `id=eq.${game.value.id}`
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            game.value = payload.new as Game
-          }
+    const gameId = game.value.id
+    const ch = client.channel(`game:${gameId}`)
+
+    // Game changes
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${gameId}` }, (payload) => {
+      if (payload.eventType === 'UPDATE') {
+        game.value = payload.new as Game
+      }
+      else if (payload.eventType === 'DELETE') {
+        // Game was deleted - redirect all players to home
+        cleanup()
+        navigateTo('/')
+      }
+    })
+
+    // Player changes
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` }, (payload) => {
+      const newPlayer = payload.new as Player
+      const oldPlayer = payload.old as Player
+
+      if (payload.eventType === 'INSERT') {
+        players.value.push(newPlayer)
+      }
+      else if (payload.eventType === 'UPDATE') {
+        const index = players.value.findIndex(p => p.id === newPlayer.id)
+        if (index !== -1) {
+          players.value[index] = newPlayer
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'players',
-          filter: `game_id=eq.${game.value.id}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            players.value.push(payload.new as Player)
-          }
-          else if (payload.eventType === 'UPDATE') {
-            const index = players.value.findIndex(p => p.id === (payload.new as Player).id)
-            if (index !== -1) {
-              players.value[index] = payload.new as Player
-            }
-            if (currentPlayer.value?.id === (payload.new as Player).id) {
-              currentPlayer.value = payload.new as Player
-            }
-          }
-          else if (payload.eventType === 'DELETE') {
-            players.value = players.value.filter(p => p.id !== (payload.old as Player).id)
-          }
+        if (currentPlayer.value?.id === newPlayer.id) {
+          currentPlayer.value = newPlayer
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'game_events',
-          filter: `game_id=eq.${game.value.id}`
-        },
-        (payload) => {
-          events.value.push(payload.new as GameEvent)
-        }
-      )
-      .subscribe()
+      }
+      else if (payload.eventType === 'DELETE') {
+        players.value = players.value.filter(p => p.id !== oldPlayer.id)
+      }
+    })
+
+    // Game events
+    ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_events', filter: `game_id=eq.${gameId}` }, (payload) => {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - Supabase generic types cause excessive recursion
+      events.value.push(payload.new as GameEvent)
+    })
+
+    ch.subscribe()
+    channel = ch
   }
+
+  /* ═══════════════════════════════════════════
+     COMPUTED PROPERTIES
+     ═══════════════════════════════════════════ */
+
+  const alivePlayers = computed(() => players.value.filter(p => p.is_alive))
+  const deadPlayers = computed(() => players.value.filter(p => !p.is_alive))
+  const isHost = computed(() => currentPlayer.value?.is_host ?? false)
+  const canStartGame = computed(() => players.value.length >= 5 && game.value?.status === 'lobby')
+
+  const otherWerewolves = computed(() => {
+    if (currentPlayer.value?.role !== 'werewolf') return []
+    return players.value.filter(
+      p => p.role === 'werewolf' && p.id !== currentPlayer.value?.id && p.is_alive
+    )
+  })
+
+  /* ═══════════════════════════════════════════
+     LIFECYCLE
+     ═══════════════════════════════════════════ */
 
   async function initialize() {
     isLoading.value = true
@@ -155,30 +178,25 @@ export function useGame(gameCode: string) {
     cleanup()
   })
 
-  const alivePlayers = computed(() => players.value.filter(p => p.is_alive))
-  const deadPlayers = computed(() => players.value.filter(p => !p.is_alive))
-  const isHost = computed(() => currentPlayer.value?.is_host ?? false)
-  const canStartGame = computed(() => players.value.length >= 5 && game.value?.status === 'lobby')
-
-  const otherWerewolves = computed(() => {
-    if (currentPlayer.value?.role !== 'werewolf') return []
-    return players.value.filter(
-      p => p.role === 'werewolf' && p.id !== currentPlayer.value?.id && p.is_alive
-    )
-  })
+  /* ═══════════════════════════════════════════
+     RETURN
+     ═══════════════════════════════════════════ */
 
   return {
+    // State
     game,
     players,
     currentPlayer,
     events,
     isLoading,
     error,
+    // Computed
     alivePlayers,
     deadPlayers,
     isHost,
     canStartGame,
     otherWerewolves,
+    // Methods
     refetch: initialize
   }
 }

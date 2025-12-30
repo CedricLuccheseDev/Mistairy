@@ -1,8 +1,10 @@
-export type GameStatus = 'lobby' | 'night' | 'day' | 'vote' | 'finished'
+import type { GameSettings } from './database.types'
+
+export type GameStatus = 'lobby' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
 
 export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter'
 
-export type NightActionType = 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'hunter_kill'
+export type NightActionType = 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'witch_skip' | 'hunter_kill'
 
 export interface Game {
   id: string
@@ -10,15 +12,11 @@ export interface Game {
   status: GameStatus
   phase_end_at: string | null
   day_number: number
+  winner: 'village' | 'werewolf' | null
   created_at: string
-  host_id: string
+  host_id: string | null
   settings: GameSettings
-}
-
-export interface GameSettings {
-  discussion_time: number
-  vote_time: number
-  night_time: number
+  hunter_target_pending?: string | null
 }
 
 export interface Player {
@@ -28,8 +26,10 @@ export interface Player {
   role: Role | null
   is_alive: boolean
   is_host: boolean
+  witch_heal_used?: boolean
+  witch_kill_used?: boolean
   created_at: string
-  user_token: string
+  user_token?: string
 }
 
 export interface NightAction {
@@ -110,36 +110,5 @@ export function getRoleInfo(role: Role): RoleInfo {
   return ROLES[role]
 }
 
-export function getMinPlayers(): number {
-  return 5
-}
-
-export function getMaxPlayers(): number {
-  return 18
-}
-
-export function calculateRoles(playerCount: number): Role[] {
-  const roles: Role[] = []
-
-  const werewolfCount = Math.max(1, Math.floor(playerCount / 4))
-
-  for (let i = 0; i < werewolfCount; i++) {
-    roles.push('werewolf')
-  }
-
-  roles.push('seer')
-
-  if (playerCount >= 7) {
-    roles.push('witch')
-  }
-
-  if (playerCount >= 9) {
-    roles.push('hunter')
-  }
-
-  while (roles.length < playerCount) {
-    roles.push('villager')
-  }
-
-  return roles
-}
+// Re-export from centralized config
+export { MIN_PLAYERS, MAX_PLAYERS, calculateRoles } from '../config/game.config'

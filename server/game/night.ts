@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../shared/types/database.types'
 import type { Player, NightResult, NightAction } from './types'
+import { getNightActions, countVotes, findMajorityTarget, killPlayer } from '../services/gameService'
 
 export async function resolveNight(
   client: SupabaseClient<Database>,
@@ -8,12 +9,7 @@ export async function resolveNight(
   dayNumber: number,
   players: Player[]
 ): Promise<NightResult> {
-  // Récupérer toutes les actions de la nuit
-  const { data: actions } = await client
-    .from('night_actions')
-    .select('*')
-    .eq('game_id', gameId)
-    .eq('day_number', dayNumber)
+  const actions = await getNightActions(client, gameId, dayNumber)
 
   const result: NightResult = {
     killedByWolves: null,
@@ -22,28 +18,15 @@ export async function resolveNight(
     seerTarget: null
   }
 
-  if (!actions) return result
+  if (actions.length === 0) return result
 
   // Compter les votes des loups
-  const werewolfVotes = actions.filter(a => a.action_type === 'werewolf_vote')
-  const voteCounts = new Map<string, number>()
+  const werewolfVotes = actions
+    .filter(a => a.action_type === 'werewolf_vote' && a.target_id)
+    .map(a => ({ target_id: a.target_id! }))
 
-  for (const vote of werewolfVotes) {
-    if (vote.target_id) {
-      voteCounts.set(vote.target_id, (voteCounts.get(vote.target_id) || 0) + 1)
-    }
-  }
-
-  // Trouver la victime des loups (majorité)
-  let maxVotes = 0
-  let wolfVictimId: string | null = null
-
-  for (const [targetId, count] of voteCounts) {
-    if (count > maxVotes) {
-      maxVotes = count
-      wolfVictimId = targetId
-    }
-  }
+  const voteCounts = countVotes(werewolfVotes)
+  const { targetId: wolfVictimId } = findMajorityTarget(voteCounts)
 
   if (wolfVictimId) {
     result.killedByWolves = players.find(p => p.id === wolfVictimId) || null
@@ -73,26 +56,20 @@ export async function resolveNight(
 
 export async function applyNightResult(
   client: SupabaseClient<Database>,
-  gameId: string,
+  _gameId: string,
   result: NightResult
 ): Promise<Player[]> {
   const deadPlayers: Player[] = []
 
   // Tuer la victime des loups (si pas sauvée)
   if (result.killedByWolves) {
-    await client
-      .from('players')
-      .update({ is_alive: false })
-      .eq('id', result.killedByWolves.id)
+    await killPlayer(client, result.killedByWolves.id)
     deadPlayers.push(result.killedByWolves)
   }
 
   // Tuer la victime de la sorcière
   if (result.killedByWitch) {
-    await client
-      .from('players')
-      .update({ is_alive: false })
-      .eq('id', result.killedByWitch.id)
+    await killPlayer(client, result.killedByWitch.id)
     deadPlayers.push(result.killedByWitch)
   }
 
@@ -104,7 +81,7 @@ export function getNightDeathMessage(deadPlayers: Player[]): string {
     return 'Le village se réveille. Personne n\'est mort cette nuit.'
   }
   if (deadPlayers.length === 1) {
-    return `Le village se réveille. ${deadPlayers[0].name} a été retrouvé mort cette nuit.`
+    return `Le village se réveille. ${deadPlayers[0]!.name} a été retrouvé mort cette nuit.`
   }
   const names = deadPlayers.map(p => p.name).join(' et ')
   return `Le village se réveille. ${names} ont été retrouvés morts cette nuit.`

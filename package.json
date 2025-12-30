@@ -11,9 +11,13 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "nuxi typecheck",
-    "test": "tsx tests/game-simulation.test.ts"
+    "test": "tsx tests/gemini.test.ts && tsx tests/game-simulation.test.ts",
+    "test:gemini": "tsx tests/gemini.test.ts",
+    "test:game": "tsx tests/game-simulation.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@google/generative-ai": "^0.24.1",
     "@nuxt/ui": "^4.3.0",
     "@nuxtjs/supabase": "^2.0.3",
     "nuxt": "^4.2.2",
@@ -22,7 +26,8 @@
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.4.1",
-    "typescript": "^5.7.3",
-    "tsx": "^4.19.2"
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

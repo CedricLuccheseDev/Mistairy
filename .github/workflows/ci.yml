@@ -31,12 +31,6 @@ jobs:
       - name: Run lint
         run: npm run lint
 
-      - name: Run Supabase connection test
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: npx tsx tests/supabase.test.ts
-
       - name: Type check
         run: npx nuxi typecheck
 
@@ -46,15 +40,50 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: npm run build
 
-  deploy:
-    name: Deploy
+      - name: Start server & run tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BASE_URL: http://localhost:3000
+        run: |
+          node .output/server/index.mjs &
+          sleep 3
+          npm run test
+
+  merge-to-main:
+    name: Merge to Main
     needs: [build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge dev into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git checkout main
+          git merge origin/dev --no-edit
+          git push origin main
+          echo "✅ Merged dev into main"
+
+  deploy:
+    name: Deploy
+    needs: [build, merge-to-main]
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success' && (github.ref == 'refs/heads/main' || (github.ref == 'refs/heads/dev' && needs.merge-to-main.result == 'success')) && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}

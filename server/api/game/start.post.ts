@@ -1,5 +1,5 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
 import { calculateRoles, shuffleArray, getPhaseEndTime, getDefaultSettings } from '../../game'
 
 export default defineEventHandler(async (event) => {
@@ -28,11 +28,31 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (game.host_id !== playerId) {
+  // Verify the player is the host (check both game.host_id and player.is_host for robustness)
+  const { data: player } = await client
+    .from('players')
+    .select('*')
+    .eq('id', playerId)
+    .eq('game_id', gameId)
+    .single()
+
+  if (!player) {
+    throw createError({
+      statusCode: 403,
+      message: 'Joueur non trouvé dans cette partie'
+    })
+  }
+
+  if (game.host_id !== playerId && !player.is_host) {
     throw createError({
       statusCode: 403,
       message: 'Seul l\'hôte peut lancer la partie'
     })
+  }
+
+  // Update host_id if inconsistent but player is_host
+  if (game.host_id !== playerId && player.is_host) {
+    await client.from('games').update({ host_id: playerId }).eq('id', gameId)
   }
 
   if (game.status !== 'lobby') {
@@ -67,7 +87,7 @@ export default defineEventHandler(async (event) => {
   await Promise.all(updatePromises)
 
   // Démarrer la première nuit
-  const settings = (game.settings as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
+  const settings = (game.settings as unknown as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
   const phaseEndAt = getPhaseEndTime(settings, 'night')
 
   await client.from('games').update({

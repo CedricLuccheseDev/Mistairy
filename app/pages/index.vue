@@ -1,208 +1,196 @@
 <script setup lang="ts">
 /* --- States --- */
-const playerName = ref('')
 const gameCode = ref('')
 const isCreating = ref(false)
-const isJoining = ref(false)
-const showJoinForm = ref(false)
+const showJoinInput = ref(false)
 const error = ref('')
 
 /* --- Methods --- */
 async function createGame() {
-  if (!playerName.value.trim()) {
-    error.value = 'Entre ton prénom'
-    return
-  }
-
   isCreating.value = true
   error.value = ''
 
   try {
     const response = await $fetch('/api/game/create', {
-      method: 'POST',
-      body: { playerName: playerName.value.trim() }
+      method: 'POST'
     })
-
-    if (response.playerId) {
-      localStorage.setItem('playerId', response.playerId)
-    }
 
     await navigateTo(`/game/${response.code}`)
   }
   catch (e) {
-    error.value = 'Erreur lors de la création de la partie'
+    error.value = 'Erreur lors de la création'
     console.error(e)
-  }
-  finally {
     isCreating.value = false
   }
 }
 
-async function joinGame() {
-  if (!playerName.value.trim()) {
-    error.value = 'Entre ton prénom'
+function goToGame() {
+  if (!gameCode.value.trim() || gameCode.value.length !== 6) {
+    error.value = 'Code invalide (6 caractères)'
     return
   }
-
-  if (!gameCode.value.trim()) {
-    error.value = 'Entre le code de la partie'
-    return
-  }
-
-  isJoining.value = true
-  error.value = ''
-
-  try {
-    const response = await $fetch('/api/game/join', {
-      method: 'POST',
-      body: {
-        playerName: playerName.value.trim(),
-        code: gameCode.value.trim().toUpperCase()
-      }
-    })
-
-    if (response.playerId) {
-      localStorage.setItem('playerId', response.playerId)
-    }
-
-    await navigateTo(`/game/${response.code}`)
-  }
-  catch (e: unknown) {
-    const fetchError = e as { data?: { message?: string } }
-    error.value = fetchError.data?.message || 'Erreur lors de la connexion'
-    console.error(e)
-  }
-  finally {
-    isJoining.value = false
-  }
+  navigateTo(`/game/${gameCode.value.toUpperCase()}`)
 }
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center p-4">
-    <!-- Logo & Title -->
-    <div class="text-center mb-12">
-      <div class="text-7xl mb-4 animate-pulse">
-        🐺
-      </div>
-      <h1 class="text-5xl font-bold gradient-text mb-3">
-        Loup Garou
-      </h1>
-      <p class="text-slate-400">
-        Jouez avec vos amis sans cartes physiques
-      </p>
+  <div class="min-h-screen bg-gradient-to-b from-violet-950/30 via-slate-950 to-slate-950 flex flex-col items-center justify-center p-6 overflow-hidden">
+    <!-- Background decorations -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="absolute -top-40 -left-40 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl animate-pulse" />
+      <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s" />
+      <div class="absolute top-1/4 right-1/4 w-64 h-64 bg-red-600/5 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s" />
     </div>
 
-    <!-- Main Card -->
-    <div class="glass rounded-2xl p-6 w-full max-w-sm glow">
-      <div class="space-y-5">
-        <!-- Player name input -->
-        <div>
-          <label class="block text-sm font-medium text-slate-300 mb-2">
-            Ton prénom
-          </label>
-          <UInput
-            v-model="playerName"
-            placeholder="Comment tu t'appelles ?"
-            size="lg"
-            autofocus
-            class="w-full"
-            :ui="{
-              base: 'bg-slate-900/50 border-violet-500/30 focus:border-violet-500',
-            }"
-          />
+    <!-- Content -->
+    <div class="relative z-10 w-full max-w-md">
+      <!-- Logo & Title -->
+      <div class="text-center mb-12 animate-fade-up">
+        <div class="relative inline-block">
+          <div class="text-9xl animate-float filter drop-shadow-2xl">
+            🐺
+          </div>
+          <div class="absolute -inset-4 bg-violet-500/20 blur-2xl rounded-full -z-10" />
         </div>
+        <h1 class="text-5xl font-black text-white mt-4 tracking-tight">
+          Loup Agrou
+        </h1>
+        <p class="text-neutral-400 mt-2">
+          Jouez sans cartes physiques
+        </p>
+      </div>
 
-        <!-- Join form (conditional) -->
-        <Transition name="slide-up">
-          <div v-if="showJoinForm" class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-slate-300 mb-2">
-                Code de la partie
-              </label>
-              <UInput
-                v-model="gameCode"
-                placeholder="ABC123"
-                size="lg"
-                class="w-full uppercase"
-                maxlength="6"
-                :ui="{
-                  base: 'bg-slate-900/50 border-violet-500/30 focus:border-violet-500 tracking-widest text-center font-mono',
-                }"
-              />
+      <!-- Cards -->
+      <div class="grid gap-4 animate-fade-up" style="animation-delay: 0.15s">
+        <!-- Create Game Card -->
+        <button
+          class="group relative p-6 rounded-3xl bg-gradient-to-br from-violet-600/20 to-violet-900/20 border border-violet-500/30 backdrop-blur-sm overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:border-violet-500/50 hover:shadow-xl hover:shadow-violet-500/10 disabled:opacity-50 disabled:hover:scale-100"
+          :disabled="isCreating"
+          @click="createGame"
+        >
+          <div class="absolute inset-0 bg-gradient-to-br from-violet-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div class="relative flex items-center gap-5">
+            <div class="w-16 h-16 rounded-2xl bg-violet-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+              ✨
             </div>
+            <div class="flex-1 text-left">
+              <h2 class="text-xl font-bold text-white group-hover:text-violet-200 transition-colors">
+                {{ isCreating ? 'Création...' : 'Créer une partie' }}
+              </h2>
+              <p class="text-neutral-400 text-sm">
+                Deviens le maître du jeu
+              </p>
+            </div>
+            <div class="text-2xl text-violet-400 group-hover:translate-x-1 transition-transform">
+              →
+            </div>
+          </div>
+        </button>
 
-            <div class="flex gap-3">
-              <UButton
-                color="neutral"
-                variant="outline"
-                size="lg"
-                class="flex-1"
-                @click="showJoinForm = false"
+        <!-- Join Game Card -->
+        <div
+          class="group relative rounded-3xl bg-gradient-to-br from-indigo-600/20 to-indigo-900/20 border border-indigo-500/30 backdrop-blur-sm overflow-hidden transition-all duration-300"
+          :class="showJoinInput ? 'p-4' : 'hover:scale-[1.02] hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10'"
+        >
+          <div class="absolute inset-0 bg-gradient-to-br from-indigo-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+          <!-- Collapsed state -->
+          <button
+            v-if="!showJoinInput"
+            class="relative w-full p-6 flex items-center gap-5"
+            @click="showJoinInput = true"
+          >
+            <div class="w-16 h-16 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+              🔗
+            </div>
+            <div class="flex-1 text-left">
+              <h2 class="text-xl font-bold text-white group-hover:text-indigo-200 transition-colors">
+                Rejoindre une partie
+              </h2>
+              <p class="text-neutral-400 text-sm">
+                Entre le code de ton ami
+              </p>
+            </div>
+            <div class="text-2xl text-indigo-400 group-hover:translate-x-1 transition-transform">
+              →
+            </div>
+          </button>
+
+          <!-- Expanded state -->
+          <div v-else class="relative space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center text-xl shrink-0">
+                🔗
+              </div>
+              <input
+                v-model="gameCode"
+                type="text"
+                placeholder="CODE"
+                maxlength="6"
+                autofocus
+                class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-center tracking-[0.3em] font-mono text-lg uppercase placeholder-neutral-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                @keyup.enter="goToGame"
+              >
+            </div>
+            <div class="flex gap-2">
+              <button
+                class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-neutral-400 font-medium hover:bg-white/10 transition-colors"
+                @click="showJoinInput = false; gameCode = ''; error = ''"
               >
                 Retour
-              </UButton>
-              <UButton
-                color="primary"
-                size="lg"
-                class="flex-1 glow"
-                :loading="isJoining"
-                @click="joinGame"
+              </button>
+              <button
+                class="flex-1 px-4 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-500 transition-colors"
+                @click="goToGame"
               >
                 Rejoindre
-              </UButton>
+              </button>
             </div>
           </div>
-        </Transition>
-
-        <!-- Main buttons -->
-        <div v-if="!showJoinForm" class="space-y-3">
-          <UButton
-            color="primary"
-            size="lg"
-            block
-            class="glow"
-            :loading="isCreating"
-            @click="createGame"
-          >
-            <span class="mr-2">✨</span>
-            Créer une partie
-          </UButton>
-
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="lg"
-            block
-            @click="showJoinForm = true"
-          >
-            <span class="mr-2">🔗</span>
-            Rejoindre une partie
-          </UButton>
         </div>
+      </div>
 
-        <!-- Error message -->
-        <Transition name="fade">
-          <div v-if="error" class="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-            <p class="text-red-400 text-sm text-center">
-              {{ error }}
-            </p>
-          </div>
-        </Transition>
+      <!-- Error -->
+      <Transition name="fade">
+        <div v-if="error" class="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-center animate-shake">
+          <p class="text-red-400 text-sm">{{ error }}</p>
+        </div>
+      </Transition>
+
+      <!-- Footer -->
+      <div class="mt-10 text-center animate-fade-up" style="animation-delay: 0.3s">
+        <p class="text-neutral-600 text-sm">
+          5 à 18 joueurs
+        </p>
+        <NuxtLink
+          to="/admin"
+          class="inline-block mt-3 text-xs text-neutral-700 hover:text-violet-400 transition-colors"
+        >
+          Administration
+        </NuxtLink>
       </div>
     </div>
-
-    <!-- Footer info -->
-    <p class="mt-8 text-slate-500 text-sm">
-      5 à 18 joueurs recommandés
-    </p>
-
-    <!-- Admin link -->
-    <NuxtLink
-      to="/admin"
-      class="mt-4 text-xs text-slate-600 hover:text-violet-400 transition-colors"
-    >
-      Administration
-    </NuxtLink>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+</style>

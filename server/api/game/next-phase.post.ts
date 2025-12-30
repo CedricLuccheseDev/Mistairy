@@ -1,5 +1,5 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
 import { getPhaseEndTime, getDefaultSettings } from '../../game'
 
 export default defineEventHandler(async (event) => {
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const settings = (game.settings as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
+  const settings = (game.settings as unknown as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
 
   // day -> vote
   if (game.status === 'day') {

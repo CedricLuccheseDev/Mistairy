@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { ROLES } from '~/types/game'
+import { ROLES } from '#shared/types/game'
 
-/* --- Props --- */
+/* --- Route --- */
 const route = useRoute()
 const gameCode = route.params.code as string
 
-/* --- States --- */
-const { game, players, currentPlayer, isLoading, error, isHost, canStartGame, alivePlayers, otherWerewolves, refetch } = useGame(gameCode)
+/* --- Game State --- */
+const { game, players, currentPlayer, events, isLoading, error, isHost, canStartGame, alivePlayers, otherWerewolves, refetch } = useGame(gameCode)
 const narrator = useNarrator()
+const supabase = useSupabaseClient()
+const { isTestMode, setPlayerId, removePlayerId, getPlayerId } = usePlayerStorage()
+
+/* --- UI State --- */
 const isStarting = ref(false)
 const showRoleModal = ref(false)
+const showPlayersModal = ref(false)
+const showEventsModal = ref(false)
+const showConfigModal = ref(false)
+const showPreamble = ref(false)
+const preambleText = ref('')
 const joinName = ref('')
 const isJoining = ref(false)
 const joinError = ref('')
+const isGoogleLoading = ref(false)
+const isLeaving = ref(false)
 
 /* --- Computed --- */
 const roleInfo = computed(() => {
@@ -20,33 +31,49 @@ const roleInfo = computed(() => {
   return ROLES[currentPlayer.value.role]
 })
 
-const statusText = computed(() => {
+const phaseClass = computed(() => {
   if (!game.value) return ''
   switch (game.value.status) {
-    case 'lobby': return 'En attente des joueurs...'
-    case 'night': return `Nuit ${game.value.day_number}`
-    case 'day': return `Jour ${game.value.day_number}`
-    case 'vote': return 'Vote en cours'
-    case 'finished': return game.value.winner === 'village' ? 'Victoire du Village !' : 'Victoire des Loups-Garous !'
-    default: return ''
+    case 'night': return 'bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950'
+    case 'day': return 'bg-gradient-to-b from-amber-950/50 via-slate-950 to-slate-950'
+    case 'vote': return 'bg-gradient-to-b from-orange-950/50 via-slate-950 to-slate-950'
+    case 'hunter': return 'bg-gradient-to-b from-red-950/50 via-slate-950 to-slate-950'
+    default: return 'bg-slate-950'
+  }
+})
+
+const timerColor = computed(() => {
+  if (!game.value) return 'indigo'
+  switch (game.value.status) {
+    case 'night': return 'indigo' as const
+    case 'day': return 'amber' as const
+    case 'vote': return 'orange' as const
+    case 'hunter': return 'red' as const
+    default: return 'indigo' as const
+  }
+})
+
+const phaseDuration = computed(() => {
+  if (!game.value?.settings) return 60
+  const settings = game.value.settings as { night_time?: number; discussion_time?: number; vote_time?: number }
+  switch (game.value.status) {
+    case 'night': return settings.night_time || 30
+    case 'day': return settings.discussion_time || 120
+    case 'vote': return settings.vote_time || 60
+    case 'hunter': return 30 // 30 seconds for hunter to shoot
+    default: return 60
   }
 })
 
 /* --- Methods --- */
 async function startGame() {
   if (!canStartGame.value) return
-
   isStarting.value = true
-
   try {
     await $fetch('/api/game/start', {
       method: 'POST',
-      body: {
-        gameId: game.value?.id,
-        playerId: localStorage.getItem('playerId')
-      }
+      body: { gameId: game.value?.id, playerId: getPlayerId() }
     })
-    // Forcer le rafraîchissement pour mettre à jour le statut
     await refetch()
   }
   catch (e) {
@@ -57,8 +84,40 @@ async function startGame() {
   }
 }
 
-function copyCode() {
-  navigator.clipboard.writeText(gameCode)
+function shareLink() {
+  // In test mode, share the URL without the test param (for real players)
+  const baseUrl = `${window.location.origin}/game/${gameCode}`
+  if (navigator.share) {
+    navigator.share({ title: `Loup Agrou - ${gameCode}`, url: baseUrl })
+  }
+  else {
+    navigator.clipboard.writeText(baseUrl)
+  }
+}
+
+// Copy test URL (with ?test param) for opening another test tab
+function copyTestUrl() {
+  const testUrl = `${window.location.origin}/game/${gameCode}?test`
+  navigator.clipboard.writeText(testUrl)
+}
+
+async function leaveGame() {
+  if (!game.value || !currentPlayer.value || isLeaving.value) return
+  isLeaving.value = true
+  try {
+    await $fetch('/api/game/leave', {
+      method: 'POST',
+      body: { gameId: game.value.id, playerId: currentPlayer.value.id }
+    })
+    removePlayerId()
+    navigateTo('/')
+  }
+  catch (e) {
+    console.error('Failed to leave game:', e)
+  }
+  finally {
+    isLeaving.value = false
+  }
 }
 
 async function joinGame() {
@@ -66,21 +125,14 @@ async function joinGame() {
     joinError.value = 'Entre ton prénom'
     return
   }
-
   isJoining.value = true
   joinError.value = ''
-
   try {
     const response = await $fetch('/api/game/join', {
       method: 'POST',
-      body: {
-        playerName: joinName.value.trim(),
-        code: gameCode
-      }
+      body: { playerName: joinName.value.trim(), code: gameCode }
     })
-
-    if (response.playerId) localStorage.setItem('playerId', response.playerId)
-
+    if (response.playerId) setPlayerId(response.playerId)
     await refetch()
   }
   catch (e: unknown) {
@@ -92,11 +144,125 @@ async function joinGame() {
   }
 }
 
+async function joinWithGoogle() {
+  isGoogleLoading.value = true
+  joinError.value = ''
+
+  try {
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/game/${gameCode}?auth=google`
+      }
+    })
+
+    if (authError) {
+      joinError.value = 'Erreur de connexion Google'
+      console.error('Google auth error:', authError)
+    }
+  }
+  catch (e) {
+    joinError.value = 'Erreur de connexion Google'
+    console.error('Google auth error:', e)
+  }
+  finally {
+    isGoogleLoading.value = false
+  }
+}
+
+// Handle Google OAuth callback
+onMounted(async () => {
+  const authParam = route.query.auth
+  if (authParam === 'google') {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Joueur'
+      isJoining.value = true
+      try {
+        const response = await $fetch('/api/game/join', {
+          method: 'POST',
+          body: { playerName: displayName, code: gameCode }
+        })
+        if (response.playerId) setPlayerId(response.playerId)
+        await refetch()
+        // Clean URL
+        window.history.replaceState({}, '', `/game/${gameCode}`)
+      }
+      catch (e: unknown) {
+        const fetchError = e as { data?: { message?: string } }
+        joinError.value = fetchError.data?.message || 'Erreur lors de la connexion'
+      }
+      finally {
+        isJoining.value = false
+      }
+    }
+  }
+})
+
 /* --- Watchers --- */
+const lastNarratedPhase = ref<string | null>(null)
+
+async function playPreamble() {
+  if (!game.value) return
+
+  showPreamble.value = true
+  const playerNames = players.value.map(p => p.name)
+
+  // Generate introduction text
+  const introText = `Bienvenue dans ce village paisible... ${playerNames.length} âmes s'apprêtent à vivre une nuit de terreur. Parmi vous se cachent des loups-garous. Découvrez votre rôle et survivez jusqu'à l'aube.`
+
+  preambleText.value = introText
+
+  // Speak the introduction
+  await narrator.speak(introText, { rate: 0.8, pitch: 0.9 })
+
+  // Wait a moment then show role
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  showPreamble.value = false
+  showRoleModal.value = true
+
+  // Then narrate night start
+  await narrator.narrate.nightStart(game.value.day_number)
+}
+
 watch(() => game.value?.status, async (newStatus, oldStatus) => {
+  if (!game.value || !currentPlayer.value) return
+
+  // Avoid narrating the same phase twice
+  const phaseKey = `${newStatus}-${game.value.day_number}`
+  if (lastNarratedPhase.value === phaseKey) return
+  lastNarratedPhase.value = phaseKey
+
+  // Check if narration is enabled
+  const settings = game.value.settings as { narration_enabled?: boolean }
+  const narrationEnabled = settings.narration_enabled !== false
+
+  // Handle phase transitions with AI narration
   if (oldStatus === 'lobby' && newStatus === 'night') {
-    showRoleModal.value = true
-    await narrator.speak('La partie commence. Découvrez votre rôle.')
+    if (narrationEnabled) {
+      await playPreamble()
+    }
+    else {
+      showRoleModal.value = true
+    }
+  }
+  else if (newStatus === 'night' && oldStatus !== 'lobby') {
+    if (narrationEnabled) await narrator.narrate.nightStart(game.value.day_number)
+  }
+  else if (newStatus === 'day') {
+    if (narrationEnabled) await narrator.narrate.dayStart(game.value.day_number, alivePlayers.value.length)
+  }
+  else if (newStatus === 'vote') {
+    if (narrationEnabled) await narrator.narrate.voteStart()
+  }
+  else if (newStatus === 'hunter') {
+    const hunterPlayer = players.value.find(p => p.id === game.value?.hunter_target_pending)
+    if (hunterPlayer && narrationEnabled) {
+      await narrator.narrate.hunterDeath(hunterPlayer.name)
+    }
+  }
+  else if (newStatus === 'finished' && game.value.winner) {
+    if (narrationEnabled) await narrator.narrate.gameEnd(game.value.winner)
   }
 })
 
@@ -105,222 +271,626 @@ watch(() => currentPlayer.value?.role, (role) => {
     showRoleModal.value = true
   }
 })
+
+// Watch for death announcements and vote results in events
+const lastEventId = ref<string | null>(null)
+
+watch(() => events.value, async (newEvents) => {
+  if (!newEvents || newEvents.length === 0 || !game.value) return
+
+  // Check if narration is enabled
+  const settings = game.value.settings as { narration_enabled?: boolean }
+  if (settings.narration_enabled === false) return
+
+  // Get the latest event
+  const latestEvent = newEvents[newEvents.length - 1]
+  if (!latestEvent || latestEvent.id === lastEventId.value) return
+
+  lastEventId.value = latestEvent.id
+
+  // Narrate death announcements
+  if (latestEvent.event_type === 'night_end') {
+    const data = latestEvent.data as { dead?: Array<{ name: string }> }
+    if (data.dead && data.dead.length > 0) {
+      for (const victim of data.dead) {
+        await narrator.narrate.death(victim.name, 'werewolves')
+      }
+    }
+  }
+  // Narrate vote results
+  else if (latestEvent.event_type === 'vote_result' || latestEvent.event_type === 'player_eliminated') {
+    const data = latestEvent.data as { playerName?: string; eliminated?: string }
+    const victimName = data.playerName
+    if (victimName) {
+      await narrator.narrate.voteResult(victimName)
+    }
+  }
+}, { deep: true })
+
+/* --- Auto Phase Transition --- */
+let phaseCheckInterval: ReturnType<typeof setInterval> | null = null
+const isCheckingPhase = ref(false)
+
+async function checkPhaseTransition() {
+  if (!game.value?.id || !game.value.phase_end_at || isCheckingPhase.value) return
+  if (game.value.status === 'lobby' || game.value.status === 'finished') return
+
+  const phaseEndAt = new Date(game.value.phase_end_at).getTime()
+  const now = Date.now()
+
+  // Only check if timer has expired (with 1 second buffer)
+  if (now < phaseEndAt - 1000) return
+
+  isCheckingPhase.value = true
+  try {
+    await $fetch('/api/game/check-phase', {
+      method: 'POST',
+      body: { gameId: game.value.id }
+    })
+    await refetch()
+  }
+  catch (e) {
+    console.error('Phase check failed:', e)
+  }
+  finally {
+    isCheckingPhase.value = false
+  }
+}
+
+// Start polling when game is active
+watch(() => game.value?.status, (status) => {
+  if (phaseCheckInterval) {
+    clearInterval(phaseCheckInterval)
+    phaseCheckInterval = null
+  }
+
+  if (status && status !== 'lobby' && status !== 'finished') {
+    // Check every 2 seconds
+    phaseCheckInterval = setInterval(checkPhaseTransition, 2000)
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (phaseCheckInterval) {
+    clearInterval(phaseCheckInterval)
+  }
+})
+
+/* --- Auto-leave on window close (lobby only) --- */
+function handleBeforeUnload() {
+  // Only auto-leave if in lobby phase
+  if (game.value?.status === 'lobby' && currentPlayer.value) {
+    // Use sendBeacon for reliable request on page close
+    const data = JSON.stringify({
+      gameId: game.value.id,
+      playerId: currentPlayer.value.id
+    })
+    navigator.sendBeacon('/api/game/leave', data)
+    removePlayerId()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <template>
-  <div class="min-h-screen p-4">
+  <div class="min-h-screen transition-all duration-1000" :class="phaseClass">
+    <!-- Loading -->
     <div v-if="isLoading" class="flex items-center justify-center min-h-screen">
-      <UIcon name="i-heroicons-arrow-path" class="w-8 h-8 animate-spin" />
+      <div class="text-center animate-fade-up">
+        <div class="text-8xl mb-6 animate-float">🐺</div>
+        <p class="text-neutral-500 text-sm">Chargement...</p>
+      </div>
     </div>
 
-    <div v-else-if="error" class="flex flex-col items-center justify-center min-h-screen">
-      <p class="text-red-500 mb-4">
-        {{ error }}
-      </p>
-      <UButton to="/">
-        Retour à l'accueil
-      </UButton>
+    <!-- Error -->
+    <div v-else-if="error" class="flex flex-col items-center justify-center min-h-screen p-6">
+      <div class="text-6xl mb-4">😵</div>
+      <p class="text-red-400 mb-6 text-center">{{ error }}</p>
+      <UButton to="/" color="neutral" variant="outline" size="lg">Retour</UButton>
     </div>
 
-    <!-- Join form when not in game -->
-    <div v-else-if="!currentPlayer && game" class="flex flex-col items-center justify-center min-h-screen p-4">
-      <div class="text-center mb-8">
-        <h1 class="text-3xl font-bold mb-2">
-          🐺 Partie {{ gameCode }}
-        </h1>
-        <p class="text-gray-400">
-          {{ players.length }} joueur{{ players.length > 1 ? 's' : '' }} dans le lobby
-        </p>
+    <!-- Join Form -->
+    <div v-else-if="!currentPlayer && game" class="min-h-screen bg-gradient-to-b from-violet-950/30 via-slate-950 to-slate-950 flex flex-col overflow-hidden">
+      <!-- Background decorations -->
+      <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -left-40 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl animate-pulse" />
+        <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s" />
+        <div class="absolute top-1/3 right-1/4 w-64 h-64 bg-emerald-600/5 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s" />
       </div>
 
-      <UCard v-if="game.status === 'lobby'" class="w-full max-w-sm">
-        <div class="space-y-4">
-          <UFormField label="Ton prénom">
-            <UInput
-              v-model="joinName"
-              placeholder="Comment tu t'appelles ?"
-              size="lg"
-              autofocus
-              class="w-full"
-              @keyup.enter="joinGame"
-            />
-          </UFormField>
-
-          <UButton
-            color="primary"
-            size="lg"
-            block
-            :loading="isJoining"
-            @click="joinGame"
-          >
-            Rejoindre la partie
-          </UButton>
-
-          <p v-if="joinError" class="text-red-500 text-sm text-center">
-            {{ joinError }}
-          </p>
-        </div>
-      </UCard>
-
-      <UCard v-else class="w-full max-w-sm text-center">
-        <div class="text-4xl mb-4">
-          🚫
-        </div>
-        <p class="text-gray-400 mb-4">
-          Cette partie a déjà commencé
-        </p>
-        <UButton to="/" color="neutral" variant="outline">
-          Retour à l'accueil
-        </UButton>
-      </UCard>
-    </div>
-
-    <template v-else>
       <!-- Header -->
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h1 class="text-2xl font-bold">
-            🐺 {{ gameCode }}
-          </h1>
-          <p class="text-gray-400 text-sm">
-            {{ statusText }}
-          </p>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <GameTimer
-            v-if="game?.phase_end_at && game.status !== 'lobby' && game.status !== 'finished'"
-            :end-at="game.phase_end_at"
-          />
-
-          <UButton
-            v-if="game?.status === 'lobby'"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            icon="i-heroicons-clipboard-document"
-            @click="copyCode"
-          >
-            Copier
-          </UButton>
-        </div>
+      <div class="relative z-10 p-4">
+        <NuxtLink
+          to="/"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+        >
+          <span class="text-lg">←</span>
+          <span class="text-sm">Retour</span>
+        </NuxtLink>
       </div>
 
-      <!-- Lobby -->
-      <template v-if="game?.status === 'lobby'">
-        <UCard class="mb-4">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <h2 class="font-semibold">
-                Joueurs ({{ players.length }})
-              </h2>
-              <span class="text-sm text-gray-400">Min: 5</span>
+      <!-- Content -->
+      <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm">
+          <!-- Logo & Game Code -->
+          <div class="text-center mb-10 animate-fade-up">
+            <div class="relative inline-block">
+              <div class="text-8xl animate-float filter drop-shadow-2xl">🐺</div>
+              <div class="absolute -inset-4 bg-violet-500/20 blur-2xl rounded-full -z-10" />
             </div>
-          </template>
-
-          <div class="space-y-2">
-            <div
-              v-for="player in players"
-              :key="player.id"
-              class="flex items-center justify-between p-2 rounded-lg bg-gray-800/50"
-            >
-              <span :class="{ 'font-semibold text-primary': player.id === currentPlayer?.id }">
-                {{ player.name }}
-                <span v-if="player.id === currentPlayer?.id" class="text-gray-400">(toi)</span>
-              </span>
-              <UBadge v-if="player.is_host" color="primary" variant="subtle">
-                Hôte
-              </UBadge>
+            <h1 class="text-4xl font-black text-white mt-4 tracking-[0.2em]">{{ gameCode }}</h1>
+            <div class="flex items-center justify-center gap-2 mt-3">
+              <div class="flex -space-x-2">
+                <div v-for="i in Math.min(players.length, 4)" :key="i" class="w-6 h-6 rounded-full bg-violet-500/30 border-2 border-slate-950 flex items-center justify-center text-xs">
+                  👤
+                </div>
+                <div v-if="players.length > 4" class="w-6 h-6 rounded-full bg-violet-500/30 border-2 border-slate-950 flex items-center justify-center text-xs text-violet-300">
+                  +{{ players.length - 4 }}
+                </div>
+              </div>
+              <span class="text-neutral-400 text-sm">{{ players.length }} joueur{{ players.length > 1 ? 's' : '' }} en attente</span>
             </div>
           </div>
 
-          <template v-if="isHost" #footer>
-            <UButton
-              color="primary"
-              block
-              size="lg"
-              :disabled="!canStartGame"
-              :loading="isStarting"
-              @click="startGame"
-            >
-              {{ canStartGame ? 'Lancer la partie' : `Il faut au moins 5 joueurs (${players.length}/5)` }}
-            </UButton>
-          </template>
-        </UCard>
-
-        <p class="text-center text-gray-500 text-sm">
-          Partagez le code <strong>{{ gameCode }}</strong> avec vos amis
-        </p>
-      </template>
-
-      <!-- Game Phase -->
-      <template v-else-if="game?.status === 'night' && currentPlayer">
-        <NightPhase
-          :game="game"
-          :current-player="currentPlayer"
-          :alive-players="alivePlayers"
-          :other-werewolves="otherWerewolves"
-        />
-      </template>
-
-      <template v-else-if="game?.status === 'day' && currentPlayer">
-        <DayPhase
-          :game="game"
-          :current-player="currentPlayer"
-          :alive-players="alivePlayers"
-        />
-      </template>
-
-      <template v-else-if="game?.status === 'vote' && currentPlayer">
-        <VotePhase
-          :game="game"
-          :current-player="currentPlayer"
-          :alive-players="alivePlayers"
-        />
-      </template>
-
-      <template v-else-if="game?.status === 'finished' && currentPlayer">
-        <GameOver
-          :game="game"
-          :players="players"
-          :current-player="currentPlayer"
-        />
-      </template>
-
-      <!-- Role Modal -->
-      <UModal v-model:open="showRoleModal">
-        <template #content>
-          <div v-if="roleInfo" class="p-6 text-center">
-            <div class="text-6xl mb-4">
-              {{ roleInfo.emoji }}
+          <!-- Join Options -->
+          <div v-if="game.status === 'lobby'" class="space-y-4 animate-fade-up" style="animation-delay: 0.15s">
+            <!-- Name Input Card -->
+            <div class="p-5 rounded-3xl bg-gradient-to-br from-violet-600/20 to-violet-900/20 border border-violet-500/30 backdrop-blur-sm">
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center text-xl">
+                  ✏️
+                </div>
+                <p class="text-white font-medium">Entre ton prénom</p>
+              </div>
+              <input
+                v-model="joinName"
+                type="text"
+                placeholder="Prénom"
+                autofocus
+                class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-center text-lg placeholder-neutral-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
+                @keyup.enter="joinGame"
+              >
+              <button
+                class="w-full mt-3 px-6 py-3.5 rounded-xl bg-violet-600 text-white font-bold text-lg hover:bg-violet-500 transition-all hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+                :disabled="isJoining || !joinName.trim()"
+                @click="joinGame"
+              >
+                {{ isJoining ? 'Connexion...' : 'Rejoindre la partie' }}
+              </button>
             </div>
-            <h2 class="text-2xl font-bold mb-2">
-              {{ roleInfo.name }}
-            </h2>
-            <p class="text-gray-400 mb-6">
-              {{ roleInfo.description }}
-            </p>
 
-            <div
-              v-if="currentPlayer?.role === 'werewolf' && otherWerewolves.length > 0"
-              class="mb-6 p-4 rounded-lg bg-red-950/30 border border-red-800"
+            <!-- Divider -->
+            <div class="flex items-center gap-4">
+              <div class="flex-1 h-px bg-white/10" />
+              <span class="text-neutral-500 text-sm">ou</span>
+              <div class="flex-1 h-px bg-white/10" />
+            </div>
+
+            <!-- Google Sign In Card -->
+            <button
+              class="group w-full p-5 rounded-3xl bg-gradient-to-br from-slate-600/20 to-slate-900/20 border border-white/10 backdrop-blur-sm transition-all hover:border-white/20 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+              :disabled="isGoogleLoading"
+              @click="joinWithGoogle"
             >
-              <p class="text-sm text-red-400 mb-2">
-                Tes alliés loups-garous :
-              </p>
-              <div class="flex flex-wrap gap-2 justify-center">
-                <UBadge v-for="wolf in otherWerewolves" :key="wolf.id" color="error">
-                  {{ wolf.name }}
-                </UBadge>
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-white flex items-center justify-center">
+                  <svg class="w-6 h-6" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                </div>
+                <div class="flex-1 text-left">
+                  <p class="text-white font-semibold group-hover:text-violet-200 transition-colors">
+                    {{ isGoogleLoading ? 'Connexion...' : 'Continuer avec Google' }}
+                  </p>
+                  <p class="text-neutral-500 text-sm">Connexion rapide avec ton compte</p>
+                </div>
+                <div v-if="!isGoogleLoading" class="text-neutral-400 group-hover:translate-x-1 transition-transform">→</div>
+                <div v-else class="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            </button>
+
+            <!-- Error -->
+            <Transition name="fade">
+              <div v-if="joinError" class="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-center animate-shake">
+                <p class="text-red-400 text-sm">{{ joinError }}</p>
+              </div>
+            </Transition>
+          </div>
+
+          <!-- Game already started -->
+          <div v-else class="text-center animate-fade-up">
+            <div class="p-6 rounded-3xl bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm">
+              <div class="text-5xl mb-4">🎮</div>
+              <p class="text-orange-400 font-semibold mb-2">Partie en cours</p>
+              <p class="text-neutral-400 text-sm mb-4">Tu ne peux plus rejoindre cette partie</p>
+              <NuxtLink
+                to="/"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all"
+              >
+                ← Retour à l'accueil
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Game Interface -->
+    <template v-else-if="game && currentPlayer">
+      <div class="min-h-screen flex flex-col">
+        <!-- Top Bar: Logo + Timer + Actions -->
+        <div class="p-4 flex items-center gap-3">
+          <!-- Logo / Home link -->
+          <NuxtLink
+            to="/"
+            class="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-xl hover:bg-white/10 transition-colors shrink-0"
+            title="Retour à l'accueil"
+          >
+            🐺
+          </NuxtLink>
+
+          <!-- Timer -->
+          <div class="flex-1">
+            <GameProgressTimer
+              v-if="game.status !== 'lobby' && game.status !== 'finished'"
+              :end-at="game.phase_end_at"
+              :total-duration="phaseDuration"
+              :phase-color="timerColor"
+            />
+          </div>
+
+          <!-- Quick actions -->
+          <div v-if="game.status !== 'lobby'" class="flex items-center gap-2 shrink-0">
+            <button
+              class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
+              @click="showPlayersModal = true"
+            >
+              <span class="text-lg">👥</span>
+              <span class="text-sm text-neutral-300">{{ alivePlayers.length }}/{{ players.length }}</span>
+            </button>
+            <button
+              class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
+              @click="showEventsModal = true"
+            >
+              <span class="text-lg">📜</span>
+              <span class="text-sm text-neutral-300">Journal</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Center Content: Phase + Actions -->
+        <div class="flex-1 flex flex-col items-center justify-center px-4 pb-32">
+          <!-- Lobby -->
+          <template v-if="game.status === 'lobby'">
+            <div class="w-full max-w-md animate-fade-up">
+              <!-- Header -->
+              <div class="text-center mb-8">
+                <div class="text-6xl mb-4 animate-float">🐺</div>
+                <h2 class="text-3xl font-bold text-white mb-1 tracking-wider">{{ gameCode }}</h2>
+                <p class="text-neutral-500">{{ players.length }} / 5 joueurs minimum</p>
+              </div>
+
+              <!-- Players Grid -->
+              <div class="mb-6">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-sm text-neutral-400 font-medium">Joueurs dans la partie</p>
+                  <span class="text-xs text-violet-400 font-medium px-2 py-1 rounded-full bg-violet-500/20">
+                    {{ players.length }}/18
+                  </span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                  <!-- Existing players -->
+                  <div
+                    v-for="player in players"
+                    :key="player.id"
+                    class="relative aspect-square rounded-2xl bg-gradient-to-br from-violet-600/20 to-violet-900/20 border border-violet-500/30 flex flex-col items-center justify-center p-2 transition-all"
+                    :class="player.id === currentPlayer?.id ? 'ring-2 ring-violet-500' : ''"
+                  >
+                    <div class="text-2xl mb-1">
+                      {{ player.is_host ? '👑' : '👤' }}
+                    </div>
+                    <p class="text-white text-xs font-medium truncate w-full text-center">
+                      {{ player.name }}
+                    </p>
+                    <span v-if="player.id === currentPlayer?.id" class="absolute -top-1 -right-1 text-xs">✨</span>
+                  </div>
+                  <!-- Empty slots -->
+                  <div
+                    v-for="i in Math.max(0, 5 - players.length)"
+                    :key="'empty-' + i"
+                    class="aspect-square rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center"
+                  >
+                    <div class="w-8 h-8 rounded-full border-2 border-dashed border-white/10" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Test Mode Indicator -->
+              <div v-if="isTestMode" class="mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-yellow-400">🧪</span>
+                    <span class="text-yellow-400 text-sm font-medium">Mode Test</span>
+                  </div>
+                  <button
+                    class="px-3 py-1 text-xs rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 transition-colors"
+                    @click="copyTestUrl"
+                  >
+                    Copier URL test
+                  </button>
+                </div>
+                <p class="text-yellow-500/70 text-xs mt-1">Chaque onglet = un joueur différent</p>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex gap-2 justify-center mb-6">
+                <button
+                  class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                  @click="shareLink"
+                >
+                  <span>🔗</span>
+                  <span>Partager</span>
+                </button>
+                <button
+                  v-if="isHost"
+                  class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                  @click="showConfigModal = true"
+                >
+                  <span>⚙️</span>
+                  <span>Config</span>
+                </button>
+                <button
+                  class="px-4 py-3 rounded-xl bg-red-950/30 border border-red-500/30 text-red-400 hover:bg-red-950/50 transition-colors flex items-center justify-center gap-2"
+                  :disabled="isLeaving"
+                  @click="leaveGame"
+                >
+                  <span>🚪</span>
+                  <span>{{ isLeaving ? '...' : 'Quitter' }}</span>
+                </button>
+              </div>
+
+              <!-- Start button -->
+              <div v-if="isHost">
+                <button
+                  class="w-full px-8 py-4 rounded-xl font-bold text-lg transition-all disabled:opacity-30"
+                  :class="canStartGame
+                    ? 'bg-violet-600 text-white hover:bg-violet-500 animate-pulse'
+                    : 'bg-white/5 text-neutral-400 cursor-not-allowed'"
+                  :disabled="!canStartGame || isStarting"
+                  @click="startGame"
+                >
+                  {{ isStarting ? '...' : '🎮 Lancer la partie' }}
+                </button>
+                <p v-if="!canStartGame" class="text-center text-neutral-500 text-xs mt-2">
+                  Il faut au moins 5 joueurs pour commencer
+                </p>
+              </div>
+
+              <!-- Waiting message for non-host -->
+              <div v-else class="text-center p-4 rounded-xl bg-white/5 border border-white/10">
+                <p class="text-neutral-400 text-sm">
+                  ⏳ En attente du lancement par l'hôte...
+                </p>
               </div>
             </div>
+          </template>
 
-            <UButton color="primary" size="lg" @click="showRoleModal = false">
-              J'ai compris
-            </UButton>
-          </div>
-        </template>
-      </UModal>
+          <!-- Game Phases -->
+          <template v-else>
+            <div class="w-full max-w-md">
+              <PhasesNightPhase
+                v-if="game.status === 'night'"
+                :game="game"
+                :current-player="currentPlayer"
+                :alive-players="alivePlayers"
+                :other-werewolves="otherWerewolves"
+              />
+
+              <PhasesDayPhase
+                v-else-if="game.status === 'day'"
+                :game="game"
+                :current-player="currentPlayer"
+                :alive-players="alivePlayers"
+              />
+
+              <PhasesVotePhase
+                v-else-if="game.status === 'vote'"
+                :game="game"
+                :current-player="currentPlayer"
+                :alive-players="alivePlayers"
+              />
+
+              <PhasesHunterPhase
+                v-else-if="game.status === 'hunter'"
+                :game="game"
+                :current-player="currentPlayer"
+                :alive-players="alivePlayers"
+              />
+
+              <GameOver
+                v-else-if="game.status === 'finished'"
+                :game="game"
+                :players="players"
+                :current-player="currentPlayer"
+              />
+            </div>
+          </template>
+        </div>
+
+        <!-- Bottom Bar: Player Info (fixed) -->
+        <div
+          v-if="game.status !== 'lobby'"
+          class="fixed bottom-0 left-0 right-0 bg-slate-950/95 backdrop-blur-lg border-t border-white/5 safe-area-pb"
+        >
+          <button
+            class="w-full p-4 flex items-center gap-4"
+            @click="showRoleModal = true"
+          >
+            <!-- Role icon -->
+            <div
+              class="w-14 h-14 rounded-full flex items-center justify-center text-2xl shrink-0"
+              :class="roleInfo?.team === 'werewolf' ? 'bg-red-900/50' : 'bg-violet-900/50'"
+            >
+              {{ roleInfo?.emoji || '❓' }}
+            </div>
+
+            <!-- Player info -->
+            <div class="flex-1 text-left">
+              <p class="font-semibold text-white">{{ currentPlayer.name }}</p>
+              <p
+                class="text-sm"
+                :class="roleInfo?.team === 'werewolf' ? 'text-red-400' : 'text-violet-400'"
+              >
+                {{ roleInfo?.name || 'Inconnu' }}
+              </p>
+            </div>
+
+            <!-- Status -->
+            <div class="text-right">
+              <span
+                v-if="!currentPlayer.is_alive"
+                class="px-3 py-1 rounded-full text-xs bg-neutral-800 text-neutral-400"
+              >
+                💀 Éliminé
+              </span>
+              <span
+                v-else
+                class="px-3 py-1 rounded-full text-xs"
+                :class="roleInfo?.team === 'werewolf' ? 'bg-red-900/50 text-red-300' : 'bg-violet-900/50 text-violet-300'"
+              >
+                En vie
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
     </template>
+
+    <!-- Modals -->
+    <UModal v-model:open="showRoleModal">
+      <template #content>
+        <div v-if="roleInfo" class="p-6 text-center">
+          <div
+            class="w-24 h-24 mx-auto rounded-full flex items-center justify-center text-5xl mb-4"
+            :class="roleInfo.team === 'werewolf' ? 'bg-red-900/50' : 'bg-violet-900/50'"
+          >
+            {{ roleInfo.emoji }}
+          </div>
+          <h2 class="text-2xl font-bold text-white mb-1">{{ roleInfo.name }}</h2>
+          <p
+            class="text-sm mb-4"
+            :class="roleInfo.team === 'werewolf' ? 'text-red-400' : 'text-violet-400'"
+          >
+            {{ roleInfo.team === 'werewolf' ? 'Équipe Loups-Garous' : 'Équipe Village' }}
+          </p>
+          <p class="text-neutral-400 text-sm mb-6">{{ roleInfo.description }}</p>
+
+          <div
+            v-if="currentPlayer?.role === 'werewolf' && otherWerewolves.length > 0"
+            class="mb-6 p-4 rounded-xl bg-red-950/30 border border-red-800/30"
+          >
+            <p class="text-xs text-red-400 mb-2">🐺 Ta meute</p>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <span
+                v-for="wolf in otherWerewolves"
+                :key="wolf.id"
+                class="px-3 py-1 rounded-full bg-red-900/50 text-red-300 text-sm"
+              >
+                {{ wolf.name }}
+              </span>
+            </div>
+          </div>
+
+          <button
+            class="w-full px-6 py-3 rounded-xl bg-violet-600 text-white font-semibold hover:bg-violet-500 transition-colors"
+            @click="showRoleModal = false"
+          >
+            Compris
+          </button>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="showPlayersModal">
+      <template #content>
+        <div class="p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-white">Joueurs ({{ alivePlayers.length }}/{{ players.length }})</h3>
+            <button class="text-neutral-500 hover:text-white text-xl" @click="showPlayersModal = false">×</button>
+          </div>
+          <GamePlayersList
+            :players="players"
+            :current-player-id="currentPlayer?.id"
+            :show-roles="game?.status === 'finished'"
+          />
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="showEventsModal">
+      <template #content>
+        <div class="p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-white">Journal</h3>
+            <button class="text-neutral-500 hover:text-white text-xl" @click="showEventsModal = false">×</button>
+          </div>
+          <GameEventLog :events="events" />
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="showConfigModal">
+      <template #content>
+        <div class="p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-white">Configuration</h3>
+            <button class="text-neutral-500 hover:text-white text-xl" @click="showConfigModal = false">×</button>
+          </div>
+          <GameConfig
+            v-if="game"
+            :game-id="game.id"
+            :current-settings="game.settings as any"
+            @saved="showConfigModal = false; refetch()"
+          />
+        </div>
+      </template>
+    </UModal>
+
   </div>
 </template>
+
+<style scoped>
+.safe-area-pb {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+</style>

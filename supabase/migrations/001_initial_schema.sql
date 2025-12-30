@@ -9,13 +9,14 @@ DROP TABLE IF EXISTS games CASCADE;
 CREATE TABLE games (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code VARCHAR(6) UNIQUE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'night', 'day', 'vote', 'finished')),
+  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'night', 'day', 'vote', 'hunter', 'finished')),
   phase_end_at TIMESTAMPTZ,
   day_number INTEGER NOT NULL DEFAULT 0,
   winner VARCHAR(20) CHECK (winner IN ('village', 'werewolf')),
   settings JSONB NOT NULL DEFAULT '{"discussion_time": 180, "vote_time": 60, "night_time": 30}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  host_id UUID
+  host_id UUID,
+  hunter_target_pending UUID
 );
 
 -- Players table
@@ -31,8 +32,9 @@ CREATE TABLE players (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Add foreign key for host after players table exists
+-- Add foreign keys after players table exists
 ALTER TABLE games ADD CONSTRAINT games_host_id_fkey FOREIGN KEY (host_id) REFERENCES players(id);
+ALTER TABLE games ADD CONSTRAINT games_hunter_target_pending_fkey FOREIGN KEY (hunter_target_pending) REFERENCES players(id);
 
 -- Night actions table
 CREATE TABLE night_actions (
@@ -40,7 +42,7 @@ CREATE TABLE night_actions (
   game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   day_number INTEGER NOT NULL,
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('werewolf_vote', 'seer_look', 'witch_heal', 'witch_kill', 'hunter_kill')),
+  action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('werewolf_vote', 'seer_look', 'witch_heal', 'witch_kill', 'witch_skip', 'hunter_kill')),
   target_id UUID REFERENCES players(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(game_id, day_number, player_id, action_type)

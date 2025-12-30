@@ -1,4 +1,4 @@
-# Claude Code Guidelines - Loup Garou
+# Claude Code Guidelines - Loup Agrou
 
 ## Project Overview
 
@@ -10,13 +10,19 @@ Online Werewolf game designed for playing with friends IRL. Phones act as the na
 LoupAgrou/
 ├── app/
 │   ├── components/      # Vue components
+│   │   └── night/       # Night phase sub-components (WerewolfAction, SeerAction, etc.)
 │   ├── composables/     # Reusable logic (useGame, useNarrator, etc.)
 │   ├── pages/           # Nuxt pages
 │   ├── layouts/         # App layouts
-│   ├── types/           # TypeScript definitions
 │   └── assets/          # CSS, images, sounds
+├── shared/
+│   ├── config/          # Game configuration (game.config.ts)
+│   └── types/           # TypeScript definitions (database.types.ts, game.ts)
 ├── server/
-│   └── api/             # Nuxt API routes
+│   ├── api/             # Nuxt API routes
+│   ├── services/        # Business logic (gameService.ts)
+│   ├── game/            # Game logic helpers (phases, night, vote, etc.)
+│   └── utils/           # Server utilities
 ├── supabase/
 │   └── migrations/      # SQL migrations
 ├── tests/               # Test files
@@ -35,7 +41,14 @@ LoupAgrou/
 ### General
 - Comments in English
 - SOLID principles
-- No eslint-disable or type:ignore
+- Avoid eslint-disable or @ts-ignore (exception: Supabase realtime type recursion)
+
+### Imports
+Use the `#shared` alias for shared types and config:
+```typescript
+import type { Database } from '#shared/types/database.types'
+import { MIN_PLAYERS, MAX_PLAYERS } from '#shared/config/game.config'
+```
 
 ### Naming Conventions
 - camelCase for files, folders, variables
@@ -59,6 +72,31 @@ LoupAgrou/
 </script>
 ```
 
+### Composables
+Use clear section separators:
+
+```typescript
+/* ═══════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   FETCH FUNCTIONS
+   ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   REALTIME SUBSCRIPTIONS
+   ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   COMPUTED PROPERTIES
+   ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   LIFECYCLE
+   ═══════════════════════════════════════════ */
+```
+
 ## Game Roles (v1)
 
 | Role | French | Power |
@@ -77,11 +115,14 @@ lobby → night → day → vote → (night | finished)
 
 ## Key Files
 
-- `composables/useGame.ts` - Main game logic and state
-- `composables/useNarrator.ts` - TTS narrator management
-- `composables/useSupabase.ts` - Supabase client wrapper
+- `shared/config/game.config.ts` - Game constants (MIN/MAX_PLAYERS, DEFAULT_SETTINGS, ROLE_ACTIONS)
+- `shared/types/database.types.ts` - Supabase database types (single source of truth)
+- `shared/types/game.ts` - Game types and ROLES constant
+- `app/composables/useGame.ts` - Main game logic and state (realtime subscriptions)
+- `app/composables/useNarrator.ts` - TTS narrator management
+- `server/services/gameService.ts` - Centralized business logic (players, votes, events)
+- `server/game/phases.ts` - Phase transitions (night → day → vote)
 - `server/api/game/` - Game API endpoints
-- `supabase/functions/distribute-roles/` - Secure role distribution
 
 ## Anti-Cheat (RLS)
 
@@ -160,5 +201,6 @@ npm run dev
 ```env
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_anon_key
-SUPABASE_SERVICE_KEY=your_service_key  # Server-side only
+SUPABASE_SECRET_KEY=your_service_key  # Server-side only (JWT signing key)
+GEMINI_API_KEY=your_gemini_key        # For AI narration (optional)
 ```

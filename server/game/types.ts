@@ -1,4 +1,4 @@
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../shared/types/database.types'
 
 export type Game = Database['public']['Tables']['games']['Row']
 export type Player = Database['public']['Tables']['players']['Row']

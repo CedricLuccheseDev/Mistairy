@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { Database } from '~/types/database.types'
-import { ROLES } from '~/types/game'
+import type { Database } from '#shared/types/database.types'
+import { ROLES } from '#shared/types/game'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../shared/types/database.types'
 import type { Player } from './types'
+import { killPlayer, createNightAction, createGameEvent } from '../services/gameService'
 
 export function isHunterDeath(player: Player): boolean {
   return player.role === 'hunter'
@@ -14,30 +15,20 @@ export async function hunterKill(
   dayNumber: number
 ): Promise<Player | null> {
   // Enregistrer l'action du chasseur
-  await client.from('night_actions').insert({
-    game_id: gameId,
-    day_number: dayNumber,
-    player_id: hunterId,
-    action_type: 'hunter_kill',
-    target_id: targetId
-  })
+  await createNightAction(client, gameId, dayNumber, hunterId, 'hunter_kill', targetId)
 
   // Tuer la cible
-  const { data: target } = await client
-    .from('players')
-    .update({ is_alive: false })
-    .eq('id', targetId)
-    .select()
-    .single()
+  const target = await killPlayer(client, targetId)
 
   if (target) {
-    await client.from('game_events').insert({
-      game_id: gameId,
-      event_type: 'hunter_kill',
-      message: `Le chasseur tire une dernière fois et emporte ${target.name} dans la tombe !`,
-      data: { hunterId, targetId, targetName: target.name }
-    })
+    await createGameEvent(
+      client,
+      gameId,
+      'hunter_kill',
+      `Le chasseur tire une dernière fois et emporte ${target.name} dans la tombe !`,
+      { hunterId, targetId, targetName: target.name }
+    )
   }
 
-  return target || null
+  return target
 }

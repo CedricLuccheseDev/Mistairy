@@ -1,24 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
+import type { Database, GameSettings } from '../../shared/types/database.types'
 import type { Game, Player, GameStatus } from './types'
+import { DEFAULT_SETTINGS } from '../../shared/config/game.config'
 import { resolveNight, applyNightResult, getNightDeathMessage } from './night'
 import { checkVictory, getVictoryMessage } from './victory'
 
-export interface PhaseSettings {
-  night_time: number
-  discussion_time: number
-  vote_time: number
+export function getDefaultSettings(): GameSettings {
+  return { ...DEFAULT_SETTINGS }
 }
 
-export function getDefaultSettings(): PhaseSettings {
-  return {
-    night_time: 30,
-    discussion_time: 120,
-    vote_time: 60
-  }
-}
+export type { GameSettings }
 
-export function getPhaseEndTime(settings: PhaseSettings, phase: GameStatus): Date {
+export function getPhaseEndTime(settings: GameSettings, phase: GameStatus): Date {
   const now = Date.now()
   let duration = 0
 
@@ -81,7 +74,7 @@ export async function transitionToDay(
   }
 
   // Passer au jour
-  const settings = game.settings as PhaseSettings
+  const settings = game.settings as unknown as GameSettings
   const phaseEndAt = getPhaseEndTime(settings, 'day')
 
   await client.from('games').update({
@@ -103,7 +96,7 @@ export async function transitionToVote(
   client: SupabaseClient<Database>,
   game: Game
 ): Promise<void> {
-  const settings = game.settings as PhaseSettings
+  const settings = game.settings as unknown as GameSettings
   const phaseEndAt = getPhaseEndTime(settings, 'vote')
 
   await client.from('games').update({
@@ -122,7 +115,7 @@ export async function transitionToVote(
 export async function transitionToNight(
   client: SupabaseClient<Database>,
   game: Game,
-  eliminatedPlayer: Player | null
+  _eliminatedPlayer: Player | null
 ): Promise<{ winner: 'village' | 'werewolf' | null }> {
   // Vérifier la victoire après élimination
   const { data: players } = await client
@@ -150,7 +143,7 @@ export async function transitionToNight(
   }
 
   // Passer à la nuit suivante
-  const settings = game.settings as PhaseSettings
+  const settings = game.settings as unknown as GameSettings
   const phaseEndAt = getPhaseEndTime(settings, 'night')
 
   await client.from('games').update({

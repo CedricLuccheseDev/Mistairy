@@ -1,5 +1,7 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
+import { DEFAULT_SETTINGS } from '../../../shared/config/game.config'
+import { logger } from '../../utils/logger'
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -11,16 +13,6 @@ function generateCode(): string {
 }
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event)
-  const { playerName } = body
-
-  if (!playerName || typeof playerName !== 'string' || playerName.trim().length === 0) {
-    throw createError({
-      statusCode: 400,
-      message: 'Le nom du joueur est requis'
-    })
-  }
-
   const client = await serverSupabaseClient<Database>(event)
 
   let code = generateCode()
@@ -51,7 +43,8 @@ export default defineEventHandler(async (event) => {
     .from('games')
     .insert({
       code,
-      status: 'lobby'
+      status: 'lobby',
+      settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
     })
     .select()
     .single()
@@ -63,32 +56,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { data: player, error: playerError } = await client
-    .from('players')
-    .insert({
-      game_id: game.id,
-      name: playerName.trim(),
-      is_host: true
-    })
-    .select()
-    .single()
-
-  if (playerError || !player) {
-    await client.from('games').delete().eq('id', game.id)
-    throw createError({
-      statusCode: 500,
-      message: 'Erreur lors de la création du joueur'
-    })
-  }
-
-  await client
-    .from('games')
-    .update({ host_id: player.id })
-    .eq('id', game.id)
+  logger.game.create(game.code)
 
   return {
     code: game.code,
-    gameId: game.id,
-    playerId: player.id
+    gameId: game.id
   }
 })

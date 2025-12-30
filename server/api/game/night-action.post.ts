@@ -1,5 +1,6 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
+import { ROLE_ACTIONS } from '../../../shared/config/game.config'
 import { transitionToDay } from '../../game'
 
 export default defineEventHandler(async (event) => {
@@ -49,13 +50,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Vérifier que l'action est valide pour ce rôle
-  const validActions: Record<string, string[]> = {
-    werewolf: ['werewolf_vote'],
-    seer: ['seer_look'],
-    witch: ['witch_heal', 'witch_kill', 'witch_skip']
-  }
-
-  if (!player.role || !validActions[player.role]?.includes(actionType)) {
+  if (!player.role || !ROLE_ACTIONS[player.role]?.includes(actionType)) {
     throw createError({
       statusCode: 400,
       message: 'Action non autorisée pour ce rôle'

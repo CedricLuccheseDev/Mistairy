@@ -1,5 +1,7 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../../shared/types/database.types'
+import { MAX_PLAYERS } from '../../../shared/config/game.config'
+import { logger } from '../../utils/logger'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -46,19 +48,22 @@ export default defineEventHandler(async (event) => {
     .select('id')
     .eq('game_id', game.id)
 
-  if (existingPlayers && existingPlayers.length >= 18) {
+  if (existingPlayers && existingPlayers.length >= MAX_PLAYERS) {
     throw createError({
       statusCode: 400,
-      message: 'La partie est complète (18 joueurs max)'
+      message: `La partie est complète (${MAX_PLAYERS} joueurs max)`
     })
   }
+
+  // First player becomes host
+  const isFirstPlayer = !existingPlayers || existingPlayers.length === 0
 
   const { data: player, error: playerError } = await client
     .from('players')
     .insert({
       game_id: game.id,
       name: playerName.trim(),
-      is_host: false
+      is_host: isFirstPlayer
     })
     .select()
     .single()
@@ -70,9 +75,20 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Set host_id on game if first player
+  if (isFirstPlayer) {
+    await client
+      .from('games')
+      .update({ host_id: player.id })
+      .eq('id', game.id)
+  }
+
+  logger.player.join(game.code, player.name, isFirstPlayer)
+
   return {
     code: game.code,
     gameId: game.id,
-    playerId: player.id
+    playerId: player.id,
+    isHost: isFirstPlayer
   }
 })

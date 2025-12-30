@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
+import type { Database } from '../../shared/types/database.types'
 import type { Player, VoteResult } from './types'
+import { getDayVotes, countVotes, findMajorityTarget, killPlayer } from '../services/gameService'
 
 export async function resolveVotes(
   client: SupabaseClient<Database>,
@@ -8,35 +9,11 @@ export async function resolveVotes(
   dayNumber: number,
   players: Player[]
 ): Promise<VoteResult> {
-  const { data: votes } = await client
-    .from('day_votes')
-    .select('*')
-    .eq('game_id', gameId)
-    .eq('day_number', dayNumber)
+  const votes = await getDayVotes(client, gameId, dayNumber)
+  const voteCounts = countVotes(votes)
+  const { targetId, isTie } = findMajorityTarget(voteCounts)
 
-  const voteCounts = new Map<string, number>()
-
-  for (const vote of votes || []) {
-    voteCounts.set(vote.target_id, (voteCounts.get(vote.target_id) || 0) + 1)
-  }
-
-  // Trouver le max de votes
-  let maxVotes = 0
-  let eliminated: Player | null = null
-  let isTie = false
-
-  const sortedVotes = Array.from(voteCounts.entries()).sort((a, b) => b[1] - a[1])
-
-  if (sortedVotes.length > 0) {
-    maxVotes = sortedVotes[0][1]
-    const topVoted = sortedVotes.filter(([_, count]) => count === maxVotes)
-
-    if (topVoted.length === 1) {
-      eliminated = players.find(p => p.id === topVoted[0][0]) || null
-    } else {
-      isTie = true
-    }
-  }
+  const eliminated = targetId ? players.find(p => p.id === targetId) || null : null
 
   return { eliminated, isTie, votes: voteCounts }
 }
@@ -45,10 +22,7 @@ export async function eliminatePlayer(
   client: SupabaseClient<Database>,
   player: Player
 ): Promise<void> {
-  await client
-    .from('players')
-    .update({ is_alive: false })
-    .eq('id', player.id)
+  await killPlayer(client, player.id)
 }
 
 export function getVoteResultMessage(result: VoteResult): string {
@@ -64,7 +38,7 @@ export function getVoteResultMessage(result: VoteResult): string {
 export function hasEveryoneVoted(
   votes: { voter_id: string }[],
   players: Player[],
-  dayNumber: number
+  _dayNumber: number
 ): boolean {
   const alivePlayers = players.filter(p => p.is_alive)
   return votes.length >= alivePlayers.length

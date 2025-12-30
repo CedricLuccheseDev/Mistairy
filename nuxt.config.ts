@@ -5,9 +5,23 @@ export default defineNuxtConfig({
 
   modules: ['@nuxt/ui', '@nuxtjs/supabase', '@nuxt/eslint'],
 
+  alias: {
+    '#shared': '../shared'
+  },
+
+  runtimeConfig: {
+    supabaseServiceKey: process.env.SUPABASE_SECRET_KEY,
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    geminiModel: process.env.GEMINI_MODEL, // Optional: defaults to gemini-2.0-flash-exp
+    public: {
+      supabaseUrl: process.env.SUPABASE_URL
+    }
+  },
+
   css: ['~/assets/css/main.css'],
 
   supabase: {
+    types: false,
     redirectOptions: {
       login: '/',
       callback: '/',
@@ -17,9 +31,9 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Loup Garou',
+      title: 'Loup Agrou',
       meta: [
-        { name: 'description', content: 'Jouez au Loup Garou avec vos amis sans cartes physiques' },
+        { name: 'description', content: 'Jouer au Loup Garou en vrai sans cartes physiques' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' }
       ]
     }
