@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   night_time: 30,
   discussion_time: 120,
   vote_time: 60,
+  max_players: MAX_PLAYERS,
   narration_enabled: true,
   roles: {
     seer: true,

@@ -19,12 +19,50 @@ interface BatchResponse {
   storyTheme: string
 }
 
+interface TTSResponse {
+  success: boolean
+  audio?: string
+  contentType?: string
+  useFallback?: boolean
+  message?: string
+}
+
+type AmbientSound = 'night' | 'day' | 'vote' | 'death' | 'victory' | 'defeat' | 'suspense' | 'transition'
+
+// Voice types: 'story' for atmospheric narration, 'event' for game announcements
+type VoiceType = 'story' | 'event'
+
+// Ambient sound URLs
+const AMBIENT_SOUNDS: Record<AmbientSound, string> = {
+  night: '/sounds/night.mp3',
+  day: '/sounds/day.mp3',
+  vote: '/sounds/night.mp3', // Reuse night for vote tension
+  death: '/sounds/night.mp3',
+  victory: '/sounds/day.mp3',
+  defeat: '/sounds/night.mp3',
+  suspense: '/sounds/night.mp3',
+  transition: '/sounds/day.mp3'
+}
+
 export function useNarrator() {
+  /* ═══════════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════════ */
   const isSpeaking = ref(false)
   const isSupported = ref(false)
   const isGenerating = ref(false)
   const selectedVoice = ref<SpeechSynthesisVoice | null>(null)
   const voicesLoaded = ref(false)
+  const useCloudTTS = ref(true) // Try cloud TTS first, fallback to browser
+  const currentAudio = ref<HTMLAudioElement | null>(null)
+  const ambientAudio = ref<HTMLAudioElement | null>(null)
+
+  // Get sound settings from composable
+  const { settings: soundSettings } = useSoundSettings()
+
+  /* ═══════════════════════════════════════════
+     BROWSER TTS SETUP
+     ═══════════════════════════════════════════ */
 
   // Find the best French voice (prefer natural/neural voices)
   function findBestVoice(): SpeechSynthesisVoice | null {
@@ -35,22 +73,17 @@ export function useNarrator() {
 
     // Priority order for natural-sounding voices
     const preferredVoiceNames = [
-      // Google high quality
       'Google français',
-      // Microsoft Azure neural voices
       'Microsoft Henri',
       'Microsoft Claude',
       'Microsoft Paul',
-      // Apple neural voices
       'Thomas',
       'Audrey',
       'Amélie',
-      // Other common natural voices
       'Google French',
       'French France'
     ]
 
-    // Try to find a preferred voice
     for (const preferred of preferredVoiceNames) {
       const voice = frenchVoices.find(v =>
         v.name.toLowerCase().includes(preferred.toLowerCase())
@@ -58,15 +91,12 @@ export function useNarrator() {
       if (voice) return voice
     }
 
-    // Prefer non-local voices (usually higher quality)
     const remoteVoice = frenchVoices.find(v => !v.localService)
     if (remoteVoice) return remoteVoice
 
-    // Fallback to any French voice
     return frenchVoices[0] || null
   }
 
-  // Initialize voices
   function initVoices() {
     const voices = window.speechSynthesis.getVoices()
     if (voices.length > 0) {
@@ -79,14 +109,67 @@ export function useNarrator() {
     isSupported.value = 'speechSynthesis' in window
 
     if (isSupported.value) {
-      // Voices might load async
       initVoices()
       window.speechSynthesis.onvoiceschanged = initVoices
     }
   })
 
-  // Speak with improved natural settings
-  function speak(text: string, options?: {
+  /* ═══════════════════════════════════════════
+     CLOUD TTS
+     ═══════════════════════════════════════════ */
+
+  async function speakWithCloudTTS(text: string, voiceType: VoiceType = 'story'): Promise<boolean> {
+    try {
+      // Voice configuration based on type
+      // 'story': Deep male voice for atmospheric narration (like Papi Grenier)
+      // 'event': Female voice for game announcements
+      const voiceConfig = voiceType === 'story'
+        ? { voice: 'male' as const, speakingRate: 0.85, pitch: -4.0 } // Deep, slow, dramatic
+        : { voice: 'female' as const, speakingRate: 1.0, pitch: 0 } // Clear, neutral
+
+      const response = await $fetch<TTSResponse>('/api/tts/speak', {
+        method: 'POST',
+        body: { text, ...voiceConfig }
+      })
+
+      if (!response.success || response.useFallback || !response.audio) {
+        return false
+      }
+
+      // Play the audio
+      return new Promise((resolve) => {
+        const audio = new Audio(`data:${response.contentType};base64,${response.audio}`)
+        currentAudio.value = audio
+
+        audio.onended = () => {
+          isSpeaking.value = false
+          currentAudio.value = null
+          resolve(true)
+        }
+
+        audio.onerror = () => {
+          isSpeaking.value = false
+          currentAudio.value = null
+          resolve(false)
+        }
+
+        isSpeaking.value = true
+        audio.play().catch(() => {
+          isSpeaking.value = false
+          resolve(false)
+        })
+      })
+    }
+    catch {
+      return false
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     BROWSER TTS (FALLBACK)
+     ═══════════════════════════════════════════ */
+
+  function speakWithBrowserTTS(text: string, options?: {
     rate?: number
     pitch?: number
     volume?: number
@@ -98,18 +181,14 @@ export function useNarrator() {
         return
       }
 
-      // Cancel any ongoing speech
       window.speechSynthesis.cancel()
 
       const utterance = new SpeechSynthesisUtterance(text)
       utterance.lang = 'fr-FR'
-
-      // Natural narrator settings
-      utterance.rate = options?.rate ?? 0.85 // Slightly slower for dramatic effect
-      utterance.pitch = options?.pitch ?? 0.95 // Slightly lower for narrator voice
+      utterance.rate = options?.rate ?? 0.85
+      utterance.pitch = options?.pitch ?? 0.95
       utterance.volume = options?.volume ?? 1
 
-      // Use the best available voice
       if (selectedVoice.value) {
         utterance.voice = selectedVoice.value
       }
@@ -125,28 +204,164 @@ export function useNarrator() {
 
       utterance.onerror = (event) => {
         isSpeaking.value = false
-        // Don't reject on 'interrupted' - it's expected when canceling
         if (event.error !== 'interrupted') {
           reject(event)
-        } else {
+        }
+        else {
           resolve()
         }
       }
 
-      // Small delay to ensure voice is ready
       setTimeout(() => {
         window.speechSynthesis.speak(utterance)
       }, 50)
     })
   }
 
-  // Generate AI narration and speak it
+  /* ═══════════════════════════════════════════
+     UNIFIED SPEAK FUNCTION
+     ═══════════════════════════════════════════ */
+
+  async function speak(text: string, options?: {
+    rate?: number
+    pitch?: number
+    volume?: number
+    voiceType?: VoiceType
+  }): Promise<void> {
+    // Check if voice is enabled in settings
+    if (!soundSettings.value.voiceEnabled) {
+      return
+    }
+
+    const volume = (options?.volume ?? 1) * soundSettings.value.voiceVolume
+    const voiceType = options?.voiceType ?? 'story'
+
+    // Try Cloud TTS first if enabled
+    if (useCloudTTS.value) {
+      const success = await speakWithCloudTTS(text, voiceType)
+      if (success) return
+      // Disable cloud TTS for this session if it failed
+      console.warn('Cloud TTS failed, falling back to browser TTS')
+      useCloudTTS.value = false
+    }
+
+    // Fallback to browser TTS (adjust settings based on voice type)
+    const browserOptions = voiceType === 'story'
+      ? { rate: 0.8, pitch: 0.7, volume } // Slower, deeper for story
+      : { rate: 0.95, pitch: 1.0, volume } // Normal for events
+    await speakWithBrowserTTS(text, { ...browserOptions, ...options, volume })
+  }
+
+  /* ═══════════════════════════════════════════
+     AMBIENT SOUNDS
+     ═══════════════════════════════════════════ */
+
+  function playAmbient(sound: AmbientSound, options?: {
+    loop?: boolean
+    volume?: number
+    fadeIn?: boolean
+  }): void {
+    // Check if ambient is enabled in settings
+    if (!soundSettings.value.ambientEnabled) {
+      return
+    }
+
+    stopAmbient()
+
+    const url = AMBIENT_SOUNDS[sound]
+    if (!url) return
+
+    const baseVolume = options?.volume ?? soundSettings.value.ambientVolume
+    const audio = new Audio(url)
+    audio.loop = options?.loop ?? false
+    audio.volume = options?.fadeIn ? 0 : baseVolume
+    ambientAudio.value = audio
+
+    audio.play().catch((err) => {
+      console.warn('Could not play ambient sound:', err)
+    })
+
+    // Fade in effect
+    if (options?.fadeIn) {
+      const targetVolume = baseVolume
+      let currentVolume = 0
+      const fadeInterval = setInterval(() => {
+        currentVolume += 0.05
+        if (currentVolume >= targetVolume) {
+          audio.volume = targetVolume
+          clearInterval(fadeInterval)
+        }
+        else {
+          audio.volume = currentVolume
+        }
+      }, 100)
+    }
+  }
+
+  function stopAmbient(fadeOut = false): void {
+    if (!ambientAudio.value) return
+
+    if (fadeOut) {
+      const audio = ambientAudio.value
+      const fadeInterval = setInterval(() => {
+        if (audio.volume > 0.05) {
+          audio.volume -= 0.05
+        }
+        else {
+          audio.pause()
+          clearInterval(fadeInterval)
+        }
+      }, 100)
+    }
+    else {
+      ambientAudio.value.pause()
+    }
+    ambientAudio.value = null
+  }
+
+  function playSoundEffect(sound: AmbientSound): void {
+    // Check if effects are enabled in settings
+    if (!soundSettings.value.effectsEnabled) {
+      return
+    }
+
+    const url = AMBIENT_SOUNDS[sound]
+    if (!url) return
+
+    const audio = new Audio(url)
+    audio.volume = soundSettings.value.effectsVolume
+    audio.play().catch((err) => {
+      console.warn('Could not play sound effect:', err)
+    })
+  }
+
+  /* ═══════════════════════════════════════════
+     AI NARRATION
+     ═══════════════════════════════════════════ */
+
+  // Determine voice type based on narration context
+  function getVoiceTypeForContext(context: NarrationContext): VoiceType {
+    // Story narration contexts (atmospheric, deep voice)
+    const storyContexts: NarrationContext[] = [
+      'night_start', 'werewolves_wake', 'werewolves_done',
+      'seer_wake', 'seer_done', 'witch_wake', 'witch_done',
+      'day_start', 'game_end'
+    ]
+
+    // Event contexts (announcements, female voice)
+    // death_announce, vote_start, vote_result, hunter_death
+    return storyContexts.includes(context) ? 'story' : 'event'
+  }
+
   async function narrateWithAI(
     context: NarrationContext,
     data?: NarrationData,
-    options?: { rate?: number; pitch?: number }
+    options?: { rate?: number; pitch?: number; voiceType?: VoiceType }
   ): Promise<string> {
     isGenerating.value = true
+
+    // Use provided voiceType or determine from context
+    const voiceType = options?.voiceType ?? getVoiceTypeForContext(context)
 
     try {
       const response = await $fetch<{ narration: string }>('/api/narration/generate', {
@@ -155,14 +370,13 @@ export function useNarrator() {
       })
 
       const narration = response.narration || getDefaultMessage(context, data)
-      await speak(narration, options)
+      await speak(narration, { ...options, voiceType })
       return narration
     }
     catch (error) {
       console.error('AI narration failed:', error)
-      // Fallback to default message
       const fallback = getDefaultMessage(context, data)
-      await speak(fallback, options)
+      await speak(fallback, { ...options, voiceType })
       return fallback
     }
     finally {
@@ -171,13 +385,24 @@ export function useNarrator() {
   }
 
   function stop() {
+    // Stop cloud TTS audio
+    if (currentAudio.value) {
+      currentAudio.value.pause()
+      currentAudio.value = null
+    }
+
+    // Stop browser TTS
     if (isSupported.value) {
       window.speechSynthesis.cancel()
-      isSpeaking.value = false
     }
+
+    isSpeaking.value = false
   }
 
-  // Batch generate multiple narrations in one API call (much more efficient)
+  /* ═══════════════════════════════════════════
+     BATCH GENERATION
+     ═══════════════════════════════════════════ */
+
   async function generateBatch(
     gameId: string,
     contexts: BatchContext[]
@@ -191,7 +416,6 @@ export function useNarrator() {
     }
     catch (error) {
       console.error('Batch narration failed:', error)
-      // Return defaults on error
       const narrations: Record<string, string> = {}
       for (const ctx of contexts) {
         narrations[ctx.context] = getDefaultMessage(ctx.context, ctx.data)
@@ -200,7 +424,6 @@ export function useNarrator() {
     }
   }
 
-  // Generate all night phase narrations at once
   async function generateNightNarrations(
     gameId: string,
     dayNumber: number,
@@ -225,7 +448,6 @@ export function useNarrator() {
     return result.narrations
   }
 
-  // Generate all day phase narrations at once
   async function generateDayNarrations(
     gameId: string,
     dayNumber: number,
@@ -245,35 +467,41 @@ export function useNarrator() {
     return result.narrations
   }
 
-  // Default messages as fallback
+  /* ═══════════════════════════════════════════
+     DEFAULT MESSAGES
+     ═══════════════════════════════════════════ */
+
   function getDefaultMessage(context: NarrationContext, data?: NarrationData): string {
     const messages: Record<NarrationContext, string> = {
-      night_start: 'Le village s\'endort. La nuit tombe.',
-      werewolves_wake: 'Les loups-garous se réveillent et désignent une victime.',
+      night_start: 'La nuit tombe sur le village. Fermez les yeux.',
+      werewolves_wake: 'Les loups-garous se réveillent et choisissent leur victime.',
       werewolves_done: 'Les loups-garous se rendorment.',
-      seer_wake: 'La voyante se réveille et consulte les esprits.',
+      seer_wake: 'La voyante se réveille. Elle peut découvrir un rôle.',
       seer_done: 'La voyante se rendort.',
       witch_wake: 'La sorcière se réveille avec ses potions.',
       witch_done: 'La sorcière se rendort.',
-      day_start: 'Le soleil se lève sur le village.',
+      day_start: 'Le soleil se lève. Le village se réveille.',
       death_announce: data?.victimName
-        ? `${data.victimName} a été trouvé mort ce matin.`
-        : 'Un villageois a été trouvé mort.',
+        ? `${data.victimName} a été retrouvé mort ce matin.`
+        : 'Un villageois a été tué cette nuit.',
       vote_start: 'Le village doit voter pour éliminer un suspect.',
       vote_result: data?.victimName
         ? `Le village a décidé d'éliminer ${data.victimName}.`
         : 'Le village a rendu son verdict.',
       hunter_death: data?.victimName
-        ? `${data.victimName} était le chasseur ! Il tire une dernière fois.`
+        ? `${data.victimName} était le chasseur ! Il peut tirer sur quelqu'un.`
         : 'Le chasseur tire une dernière fois.',
       game_end: data?.winner === 'village'
-        ? 'Le village a éliminé tous les loups-garous !'
-        : 'Les loups-garous ont dévoré le village.'
+        ? 'Félicitations ! Le village a éliminé tous les loups-garous !'
+        : 'Les loups-garous ont gagné. Ils ont dévoré le village.'
     }
     return messages[context]
   }
 
-  // Convenience methods for common narrations
+  /* ═══════════════════════════════════════════
+     CONVENIENCE METHODS
+     ═══════════════════════════════════════════ */
+
   const narrate = {
     nightStart: (dayNumber: number) =>
       narrateWithAI('night_start', { dayNumber }),
@@ -315,6 +543,19 @@ export function useNarrator() {
       narrateWithAI('game_end', { winner })
   }
 
+  // Ambient sound helpers for game phases
+  const ambient = {
+    startNight: () => playAmbient('night', { loop: true, fadeIn: true }),
+    startDay: () => playAmbient('day', { loop: true, fadeIn: true }),
+    startVote: () => playAmbient('vote', { loop: true }),
+    playDeath: () => playSoundEffect('death'),
+    playVictory: () => playSoundEffect('victory'),
+    playDefeat: () => playSoundEffect('defeat'),
+    playSuspense: () => playSoundEffect('suspense'),
+    playTransition: () => playSoundEffect('transition'),
+    stop: () => stopAmbient(true)
+  }
+
   // Legacy messages for backward compatibility
   const messages = {
     nightStart: 'Le village s\'endort. La nuit tombe sur le village.',
@@ -336,6 +577,7 @@ export function useNarrator() {
   }
 
   return {
+    // TTS
     speak,
     narrateWithAI,
     narrate,
@@ -345,10 +587,18 @@ export function useNarrator() {
     isSupported,
     selectedVoice,
     voicesLoaded,
+    useCloudTTS,
     messages,
-    // Batch methods (more efficient)
+    // Batch methods
     generateBatch,
     generateNightNarrations,
-    generateDayNarrations
+    generateDayNarrations,
+    // Ambient sounds
+    ambient,
+    playAmbient,
+    stopAmbient,
+    playSoundEffect,
+    // Sound settings
+    soundSettings
   }
 }

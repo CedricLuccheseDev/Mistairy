@@ -10,6 +10,7 @@ const { game, players, currentPlayer, events, isLoading, error, isHost, canStart
 const narrator = useNarrator()
 const supabase = useSupabaseClient()
 const { isTestMode, setPlayerId, removePlayerId, getPlayerId } = usePlayerStorage()
+const { initForHost } = useSoundSettings()
 
 /* --- UI State --- */
 const isStarting = ref(false)
@@ -17,6 +18,7 @@ const showRoleModal = ref(false)
 const showPlayersModal = ref(false)
 const showEventsModal = ref(false)
 const showConfigModal = ref(false)
+const showSoundModal = ref(false)
 const showPreamble = ref(false)
 const preambleText = ref('')
 const joinName = ref('')
@@ -24,6 +26,9 @@ const isJoining = ref(false)
 const joinError = ref('')
 const isGoogleLoading = ref(false)
 const isLeaving = ref(false)
+
+/* --- Cleanup State (non-reactive for beforeunload) --- */
+let createdGameId: string | null = null
 
 /* --- Computed --- */
 const roleInfo = computed(() => {
@@ -63,6 +68,12 @@ const phaseDuration = computed(() => {
     case 'hunter': return 30 // 30 seconds for hunter to shoot
     default: return 60
   }
+})
+
+const maxPlayers = computed(() => {
+  if (!game.value?.settings) return 18
+  const settings = game.value.settings as { max_players?: number }
+  return settings.max_players || 18
 })
 
 /* --- Methods --- */
@@ -132,7 +143,12 @@ async function joinGame() {
       method: 'POST',
       body: { playerName: joinName.value.trim(), code: gameCode }
     })
-    if (response.playerId) setPlayerId(response.playerId)
+    if (response.playerId) {
+      setPlayerId(response.playerId)
+      // Clear created game flag since we've now joined
+      sessionStorage.removeItem('createdGame')
+      createdGameId = null
+    }
     await refetch()
   }
   catch (e: unknown) {
@@ -183,7 +199,12 @@ onMounted(async () => {
           method: 'POST',
           body: { playerName: displayName, code: gameCode }
         })
-        if (response.playerId) setPlayerId(response.playerId)
+        if (response.playerId) {
+          setPlayerId(response.playerId)
+          // Clear created game flag since we've now joined
+          sessionStorage.removeItem('createdGame')
+          createdGameId = null
+        }
         await refetch()
         // Clean URL
         window.history.replaceState({}, '', `/game/${gameCode}`)
@@ -216,13 +237,21 @@ async function playPreamble() {
   // Speak the introduction
   await narrator.speak(introText, { rate: 0.8, pitch: 0.9 })
 
-  // Wait a moment then show role
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  // Wait a moment then show role (only if not skipped)
+  if (showPreamble.value) {
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    showPreamble.value = false
+    showRoleModal.value = true
+
+    // Then narrate night start
+    await narrator.narrate.nightStart(game.value.day_number)
+  }
+}
+
+function skipPreamble() {
+  narrator.stop()
   showPreamble.value = false
   showRoleModal.value = true
-
-  // Then narrate night start
-  await narrator.narrate.nightStart(game.value.day_number)
 }
 
 watch(() => game.value?.status, async (newStatus, oldStatus) => {
@@ -237,8 +266,9 @@ watch(() => game.value?.status, async (newStatus, oldStatus) => {
   const settings = game.value.settings as { narration_enabled?: boolean }
   const narrationEnabled = settings.narration_enabled !== false
 
-  // Handle phase transitions with AI narration
+  // Handle phase transitions with AI narration and ambient sounds
   if (oldStatus === 'lobby' && newStatus === 'night') {
+    narrator.ambient.startNight()
     if (narrationEnabled) {
       await playPreamble()
     }
@@ -247,12 +277,15 @@ watch(() => game.value?.status, async (newStatus, oldStatus) => {
     }
   }
   else if (newStatus === 'night' && oldStatus !== 'lobby') {
+    narrator.ambient.startNight()
     if (narrationEnabled) await narrator.narrate.nightStart(game.value.day_number)
   }
   else if (newStatus === 'day') {
+    narrator.ambient.startDay()
     if (narrationEnabled) await narrator.narrate.dayStart(game.value.day_number, alivePlayers.value.length)
   }
   else if (newStatus === 'vote') {
+    narrator.ambient.startVote()
     if (narrationEnabled) await narrator.narrate.voteStart()
   }
   else if (newStatus === 'hunter') {
@@ -262,6 +295,7 @@ watch(() => game.value?.status, async (newStatus, oldStatus) => {
     }
   }
   else if (newStatus === 'finished' && game.value.winner) {
+    narrator.ambient.stop()
     if (narrationEnabled) await narrator.narrate.gameEnd(game.value.winner)
   }
 })
@@ -271,6 +305,13 @@ watch(() => currentPlayer.value?.role, (role) => {
     showRoleModal.value = true
   }
 })
+
+// Enable sounds for host by default
+watch(isHost, (host) => {
+  if (host) {
+    initForHost()
+  }
+}, { immediate: true })
 
 // Watch for death announcements and vote results in events
 const lastEventId = ref<string | null>(null)
@@ -354,28 +395,117 @@ onUnmounted(() => {
   if (phaseCheckInterval) {
     clearInterval(phaseCheckInterval)
   }
+  // Stop ambient sounds when leaving the page
+  narrator.ambient.stop()
 })
 
-/* --- Auto-leave on window close (lobby only) --- */
-function handleBeforeUnload() {
+/* --- Auto-leave on window close/refresh (lobby only) --- */
+// Store data outside of Vue reactivity for reliable access in beforeunload
+let cachedGameId: string | null = null
+let cachedPlayerId: string | null = null
+let cachedGameStatus: string | null = null
+
+// Update cached values whenever game or player changes
+watch([game, currentPlayer], () => {
+  cachedGameId = game.value?.id || null
+  cachedPlayerId = currentPlayer.value?.id || null
+  cachedGameStatus = game.value?.status || null
+}, { immediate: true })
+
+// On page load, check if we need to clean up from a previous leave attempt
+async function cleanupStalePlayer() {
+  // Clean up orphan games from previous sessions
+  const createdGame = sessionStorage.getItem('createdGame')
+  if (createdGame) {
+    try {
+      const { gameId, code } = JSON.parse(createdGame)
+      // Only clean if it's a different game (we navigated away without joining)
+      if (code !== gameCode) {
+        sessionStorage.removeItem('createdGame')
+        await $fetch('/api/game/delete-orphan', {
+          method: 'POST',
+          body: { gameId }
+        })
+      }
+      else {
+        // Cache the createdGameId for use in beforeunload
+        createdGameId = gameId
+      }
+    }
+    catch {
+      // Ignore errors
+    }
+  }
+
+  // Clean up stale players
+  const pendingLeave = sessionStorage.getItem('pendingLeave')
+  if (pendingLeave) {
+    sessionStorage.removeItem('pendingLeave')
+    try {
+      const { gameId, playerId } = JSON.parse(pendingLeave)
+      await $fetch('/api/game/leave', {
+        method: 'POST',
+        body: { gameId, playerId }
+      })
+    }
+    catch {
+      // Ignore errors - player might already be deleted
+    }
+  }
+}
+
+function leaveOnClose() {
+  // If creator leaves without joining, delete the orphan game
+  if (createdGameId && !cachedPlayerId) {
+    sessionStorage.removeItem('createdGame')
+    const data = JSON.stringify({ gameId: createdGameId })
+    const blob = new Blob([data], { type: 'application/json' })
+    navigator.sendBeacon('/api/game/delete-orphan', blob)
+    return
+  }
+
   // Only auto-leave if in lobby phase
-  if (game.value?.status === 'lobby' && currentPlayer.value) {
-    // Use sendBeacon for reliable request on page close
+  if (cachedGameStatus === 'lobby' && cachedGameId && cachedPlayerId) {
+    // Store pending leave in sessionStorage for cleanup on next load
+    sessionStorage.setItem('pendingLeave', JSON.stringify({
+      gameId: cachedGameId,
+      playerId: cachedPlayerId
+    }))
+
     const data = JSON.stringify({
-      gameId: game.value.id,
-      playerId: currentPlayer.value.id
+      gameId: cachedGameId,
+      playerId: cachedPlayerId
     })
-    navigator.sendBeacon('/api/game/leave', data)
+
+    // Use sendBeacon - specifically designed for unload events
+    const blob = new Blob([data], { type: 'application/json' })
+    navigator.sendBeacon('/api/game/leave', blob)
+
     removePlayerId()
   }
 }
 
+function handleBeforeUnload() {
+  leaveOnClose()
+}
+
+function handlePageHide(event: PageTransitionEvent) {
+  // Only run if the page is being unloaded (not just hidden)
+  if (event.persisted) return
+  leaveOnClose()
+}
+
 onMounted(() => {
+  // Clean up any stale player from previous session
+  cleanupStalePlayer()
+
   window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('pagehide', handlePageHide)
 })
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('pagehide', handlePageHide)
 })
 </script>
 
@@ -539,10 +669,10 @@ onUnmounted(() => {
             🐺
           </NuxtLink>
 
-          <!-- Timer -->
+          <!-- Timer (hidden during preamble narration) -->
           <div class="flex-1">
             <GameProgressTimer
-              v-if="game.status !== 'lobby' && game.status !== 'finished'"
+              v-if="game.status !== 'lobby' && game.status !== 'finished' && !showPreamble"
               :end-at="game.phase_end_at"
               :total-duration="phaseDuration"
               :phase-color="timerColor"
@@ -557,6 +687,13 @@ onUnmounted(() => {
             >
               <span class="text-lg">👥</span>
               <span class="text-sm text-neutral-300">{{ alivePlayers.length }}/{{ players.length }}</span>
+            </button>
+            <button
+              class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center"
+              title="Réglages audio"
+              @click="showSoundModal = true"
+            >
+              <span class="text-lg">🔊</span>
             </button>
             <button
               class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
@@ -585,7 +722,7 @@ onUnmounted(() => {
                 <div class="flex items-center justify-between mb-3">
                   <p class="text-sm text-neutral-400 font-medium">Joueurs dans la partie</p>
                   <span class="text-xs text-violet-400 font-medium px-2 py-1 rounded-full bg-violet-500/20">
-                    {{ players.length }}/18
+                    {{ players.length }}/{{ maxPlayers }}
                   </span>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
@@ -774,6 +911,51 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
+
+      <!-- Preamble Overlay (fullscreen intro narration) -->
+      <Transition name="fade">
+        <div
+          v-if="showPreamble"
+          class="fixed inset-0 z-50 bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950 flex flex-col items-center justify-center p-6"
+        >
+          <div class="text-center max-w-md animate-fade-up">
+            <!-- Moon animation -->
+            <div class="relative mb-8">
+              <div class="text-8xl animate-float filter drop-shadow-2xl">🌙</div>
+              <div class="absolute -inset-8 bg-indigo-500/20 blur-3xl rounded-full -z-10 animate-pulse" />
+            </div>
+
+            <!-- Title -->
+            <h2 class="text-2xl font-bold text-white mb-6">La nuit tombe...</h2>
+
+            <!-- Narration text -->
+            <div class="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm mb-8">
+              <p class="text-neutral-300 leading-relaxed italic">
+                "{{ preambleText }}"
+              </p>
+            </div>
+
+            <!-- Speaking indicator -->
+            <div class="flex items-center justify-center gap-3 text-indigo-400">
+              <div class="flex gap-1">
+                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0s" />
+                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.1s" />
+                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.2s" />
+              </div>
+              <span class="text-sm">Le narrateur parle...</span>
+            </div>
+
+            <!-- Skip button (host only) -->
+            <button
+              v-if="isHost"
+              class="mt-6 px-6 py-3 rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 transition-colors"
+              @click="skipPreamble"
+            >
+              Passer l'intro →
+            </button>
+          </div>
+        </div>
+      </Transition>
     </template>
 
     <!-- Modals -->
@@ -862,6 +1044,14 @@ onUnmounted(() => {
             :current-settings="game.settings as any"
             @saved="showConfigModal = false; refetch()"
           />
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="showSoundModal">
+      <template #content>
+        <div class="p-4">
+          <GameSoundSettings @close="showSoundModal = false" />
         </div>
       </template>
     </UModal>

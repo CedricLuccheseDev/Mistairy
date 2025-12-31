@@ -19,6 +19,7 @@ export function useGame(gameCode: string) {
   const events = ref<GameEvent[]>([])
   const isLoading = ref(true)
   const error = ref<string | null>(null)
+  const hasInitialized = ref(false)
 
   let channel: RealtimeChannel | null = null
 
@@ -82,6 +83,12 @@ export function useGame(gameCode: string) {
   function subscribeToChanges() {
     if (!game.value) return
 
+    // Clean up existing subscription before creating a new one
+    if (channel) {
+      client.removeChannel(channel)
+      channel = null
+    }
+
     const gameId = game.value.id
     const ch = client.channel(`game:${gameId}`)
 
@@ -103,7 +110,10 @@ export function useGame(gameCode: string) {
       const oldPlayer = payload.old as Player
 
       if (payload.eventType === 'INSERT') {
-        players.value.push(newPlayer)
+        // Check if player already exists to avoid duplicates
+        if (!players.value.some(p => p.id === newPlayer.id)) {
+          players.value.push(newPlayer)
+        }
       }
       else if (payload.eventType === 'UPDATE') {
         const index = players.value.findIndex(p => p.id === newPlayer.id)
@@ -115,15 +125,27 @@ export function useGame(gameCode: string) {
         }
       }
       else if (payload.eventType === 'DELETE') {
-        players.value = players.value.filter(p => p.id !== oldPlayer.id)
+        // oldPlayer.id might be undefined if REPLICA IDENTITY is not FULL
+        const deletedId = oldPlayer?.id
+        if (deletedId) {
+          players.value = players.value.filter(p => p.id !== deletedId)
+        }
+        else {
+          // Fallback: refetch players if we can't determine which was deleted
+          fetchPlayers()
+        }
       }
     })
 
     // Game events
     ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_events', filter: `game_id=eq.${gameId}` }, (payload) => {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore - Supabase generic types cause excessive recursion
-      events.value.push(payload.new as GameEvent)
+      const newEvent = payload.new as GameEvent
+      // Check if event already exists to avoid duplicates
+      if (!events.value.some(e => e.id === newEvent.id)) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore - Supabase generic types cause excessive recursion
+        events.value.push(newEvent)
+      }
     })
 
     ch.subscribe()
@@ -151,7 +173,10 @@ export function useGame(gameCode: string) {
      ═══════════════════════════════════════════ */
 
   async function initialize() {
-    isLoading.value = true
+    // Only show loading spinner on first initialization
+    if (!hasInitialized.value) {
+      isLoading.value = true
+    }
     error.value = null
 
     await fetchGame()
@@ -161,6 +186,7 @@ export function useGame(gameCode: string) {
     }
 
     isLoading.value = false
+    hasInitialized.value = true
   }
 
   function cleanup() {

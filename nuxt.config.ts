@@ -3,7 +3,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
 
-  modules: ['@nuxt/ui', '@nuxtjs/supabase', '@nuxt/eslint'],
+  modules: ['@nuxt/ui', '@nuxtjs/supabase', '@nuxt/eslint', '@vueuse/motion/nuxt'],
 
   alias: {
     '#shared': '../shared'
@@ -12,7 +12,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     supabaseServiceKey: process.env.SUPABASE_SECRET_KEY,
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL, // Optional: defaults to gemini-2.0-flash-exp
+    geminiModel: process.env.GEMINI_MODEL, // Optional: defaults to gemini-2.0-flash-lite
+    googleCloudApiKey: process.env.GOOGLE_CLOUD_API_KEY, // For Google Cloud TTS
     public: {
       supabaseUrl: process.env.SUPABASE_URL
     }

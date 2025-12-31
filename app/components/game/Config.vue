@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { GameSettings } from '#shared/types/database.types'
-import { DEFAULT_SETTINGS } from '#shared/config/game.config'
+import { DEFAULT_SETTINGS, MIN_PLAYERS, MAX_PLAYERS } from '#shared/config/game.config'
 
 /* --- Props --- */
 const props = defineProps<{
@@ -23,6 +23,7 @@ const settings = reactive<GameSettings>({
   night_time: props.currentSettings?.night_time ?? DEFAULT_SETTINGS.night_time,
   discussion_time: props.currentSettings?.discussion_time ?? DEFAULT_SETTINGS.discussion_time,
   vote_time: props.currentSettings?.vote_time ?? DEFAULT_SETTINGS.vote_time,
+  max_players: props.currentSettings?.max_players ?? DEFAULT_SETTINGS.max_players,
   narration_enabled: props.currentSettings?.narration_enabled ?? DEFAULT_SETTINGS.narration_enabled,
   roles: {
     seer: props.currentSettings?.roles?.seer ?? DEFAULT_SETTINGS.roles.seer,
@@ -153,7 +154,7 @@ function getSliderProgress(value: number, min: number, max: number): string {
 </script>
 
 <template>
-  <div class="space-y-6 pb-2">
+  <div class="space-y-6 pb-2 max-h-[80vh] overflow-y-auto px-1">
     <!-- Header -->
     <div class="text-center">
       <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/30">
@@ -285,6 +286,44 @@ function getSliderProgress(value: number, min: number, max: number): string {
             step="10"
             class="slider-input"
           >
+        </div>
+      </div>
+    </div>
+
+    <!-- Max Players -->
+    <div class="p-4 rounded-2xl bg-white/5 border border-white/10">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-lg">👥</span>
+        <span class="text-sm font-semibold text-white">Nombre max de joueurs</span>
+      </div>
+
+      <div class="slider-container">
+        <div class="flex justify-between text-sm mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center text-base">🎯</span>
+            <span class="text-neutral-300">Maximum</span>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-violet-500/20 text-violet-300 text-sm font-mono font-bold">
+            {{ settings.max_players }} joueurs
+          </span>
+        </div>
+        <div class="slider-track bg-violet-950/50">
+          <div
+            class="slider-fill bg-gradient-to-r from-violet-600 to-violet-400"
+            :style="{ width: getSliderProgress(settings.max_players, MIN_PLAYERS, MAX_PLAYERS) }"
+          />
+          <input
+            v-model.number="settings.max_players"
+            type="range"
+            :min="MIN_PLAYERS"
+            :max="MAX_PLAYERS"
+            step="1"
+            class="slider-input"
+          >
+        </div>
+        <div class="flex justify-between text-xs text-neutral-500 mt-1">
+          <span>{{ MIN_PLAYERS }} min</span>
+          <span>{{ MAX_PLAYERS }} max</span>
         </div>
       </div>
     </div>

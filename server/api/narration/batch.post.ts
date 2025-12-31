@@ -107,7 +107,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const genAI = new GoogleGenerativeAI(config.geminiApiKey)
-    const modelName = config.geminiModel || 'gemini-2.0-flash-exp'
+    const modelName = config.geminiModel || 'gemini-2.0-flash-lite'
     const model = genAI.getGenerativeModel({
       model: modelName,
       systemInstruction: SYSTEM_PROMPT

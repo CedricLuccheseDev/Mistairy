@@ -13,13 +13,16 @@
     "typecheck": "nuxi typecheck",
     "test": "tsx tests/gemini.test.ts && tsx tests/game-simulation.test.ts",
     "test:gemini": "tsx tests/gemini.test.ts",
+    "test:tts": "tsx tests/tts.test.ts",
     "test:game": "tsx tests/game-simulation.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/generative-ai": "^0.24.1",
     "@nuxt/ui": "^4.3.0",
     "@nuxtjs/supabase": "^2.0.3",
+    "@vueuse/motion": "^3.0.3",
     "nuxt": "^4.2.2",
     "vue": "^3.5.26",
     "vue-router": "^4.6.4"

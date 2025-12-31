@@ -15,6 +15,12 @@ async function createGame() {
       method: 'POST'
     })
 
+    // Store created game info for cleanup if creator leaves without joining
+    sessionStorage.setItem('createdGame', JSON.stringify({
+      gameId: response.gameId,
+      code: response.code
+    }))
+
     await navigateTo(`/game/${response.code}`)
   }
   catch (e) {
@@ -45,7 +51,12 @@ function goToGame() {
     <!-- Content -->
     <div class="relative z-10 w-full max-w-md">
       <!-- Logo & Title -->
-      <div class="text-center mb-12 animate-fade-up">
+      <div
+        v-motion
+        :initial="{ opacity: 0, y: 20 }"
+        :enter="{ opacity: 1, y: 0, transition: { duration: 500 } }"
+        class="text-center mb-12"
+      >
         <div class="relative inline-block">
           <div class="text-9xl animate-float filter drop-shadow-2xl">
             🐺
@@ -61,7 +72,12 @@ function goToGame() {
       </div>
 
       <!-- Cards -->
-      <div class="grid gap-4 animate-fade-up" style="animation-delay: 0.15s">
+      <div
+        v-motion
+        :initial="{ opacity: 0, y: 20 }"
+        :enter="{ opacity: 1, y: 0, transition: { duration: 500, delay: 150 } }"
+        class="grid gap-4"
+      >
         <!-- Create Game Card -->
         <button
           class="group relative p-6 rounded-3xl bg-gradient-to-br from-violet-600/20 to-violet-900/20 border border-violet-500/30 backdrop-blur-sm overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:border-violet-500/50 hover:shadow-xl hover:shadow-violet-500/10 disabled:opacity-50 disabled:hover:scale-100"
@@ -158,7 +174,12 @@ function goToGame() {
       </Transition>
 
       <!-- Footer -->
-      <div class="mt-10 text-center animate-fade-up" style="animation-delay: 0.3s">
+      <div
+        v-motion
+        :initial="{ opacity: 0, y: 20 }"
+        :enter="{ opacity: 1, y: 0, transition: { duration: 500, delay: 300 } }"
+        class="mt-10 text-center"
+      >
         <p class="text-neutral-600 text-sm">
           5 à 18 joueurs
         </p>

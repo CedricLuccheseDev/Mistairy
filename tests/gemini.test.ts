@@ -5,7 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 config()
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp'
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite'
 
 async function testGeminiDirect() {
   console.log('\n' + '═'.repeat(60))

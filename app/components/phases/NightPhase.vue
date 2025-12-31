@@ -56,8 +56,9 @@ const currentActiveRole = computed((): 'werewolf' | 'seer' | 'witch' | 'waiting'
   const hasSeer = props.alivePlayers.some(p => p.role === 'seer')
   const hasWitch = props.alivePlayers.some(p => p.role === 'witch')
 
-  if (hasWerewolves && !hasWerewolfAction) return 'werewolf'
+  // Order: Seer (Voyante) → Werewolf (Loup-Garou) → Witch (Sorcière)
   if (hasSeer && !hasSeerAction) return 'seer'
+  if (hasWerewolves && !hasWerewolfAction) return 'werewolf'
   if (hasWitch && !hasWitchAction) return 'witch'
   return 'waiting'
 })

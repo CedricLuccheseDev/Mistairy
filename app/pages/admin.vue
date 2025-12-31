@@ -343,7 +343,7 @@ onUnmounted(() => {
                 </span>
               </td>
               <td class="px-4 py-3 text-neutral-300">
-                {{ game.players.filter(p => p.is_alive).length }}/{{ game.players.length }}
+                {{ game.players.length }}/{{ (game.settings as any)?.max_players || 18 }}
               </td>
               <td class="px-4 py-3 text-neutral-400">
                 {{ game.day_number }}

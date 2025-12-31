@@ -11,6 +11,7 @@ export interface GameSettings {
   night_time: number
   discussion_time: number
   vote_time: number
+  max_players: number
   narration_enabled: boolean
   roles: {
     seer: boolean

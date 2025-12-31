@@ -117,3 +117,6 @@ CREATE POLICY "game_events_delete" ON game_events FOR DELETE USING (true);
 ALTER PUBLICATION supabase_realtime ADD TABLE games;
 ALTER PUBLICATION supabase_realtime ADD TABLE players;
 ALTER PUBLICATION supabase_realtime ADD TABLE game_events;
+
+-- Set REPLICA IDENTITY FULL on players to get full row data in DELETE events
+ALTER TABLE players REPLICA IDENTITY FULL;

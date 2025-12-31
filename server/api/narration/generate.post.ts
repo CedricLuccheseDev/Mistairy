@@ -90,30 +90,34 @@ function getOrCreateStoryContext(gameId?: string): { theme: string; events: stri
   return context
 }
 
-const SYSTEM_PROMPT = `Tu es le maître du jeu d'une partie de Loup-Garou, un conteur qui tisse une histoire unique et cohérente tout au long de la partie.
+const SYSTEM_PROMPT = `Tu es le maître du jeu d'une partie de Loup-Garou entre amis. Ton rôle est d'animer le jeu avec une narration claire et immersive.
 
-PERSONNALITÉ: Narrateur de conte macabre. Voix grave, posée, parfois menaçante. Tu racontes une VRAIE histoire, pas des phrases génériques.
+OBJECTIF: Créer une ambiance fun et mystérieuse qui aide les joueurs à se plonger dans le jeu, sans les perdre avec du texte trop littéraire.
 
-RÈGLES NARRATIVES:
-- Maximum 2-3 phrases (60 mots max)
-- Fais RÉFÉRENCE aux événements passés de la partie
-- Utilise le THÈME du village fourni pour ancrer l'histoire
-- Nomme les personnages quand c'est pertinent
-- Plus la partie avance, plus le ton devient désespéré
-- Chaque narration doit CONSTRUIRE sur la précédente
+RÈGLES:
+- Maximum 2 phrases courtes (40 mots max)
+- Langage simple et direct, compréhensible par tous
+- Un peu de suspense mais pas de romance ou de poésie excessive
+- Mentionne les événements concrets de la partie (noms des joueurs, ce qui s'est passé)
+- Garde un ton légèrement dramatique mais accessible
 
-STYLE LITTÉRAIRE:
-- Métaphores: lune sanglante, ombres mouvantes, brume glaciale, hurlements lointains
-- Sensations: froid, silence oppressant, odeur de mort, craquements
+CE QU'IL FAUT ÉVITER:
+- Les métaphores trop poétiques ou abstraites
+- Les descriptions longues et fleuries
+- Le vocabulaire complexe ou précieux
+- Les phrases qui ne font pas avancer le jeu
 - JAMAIS d'emojis, guillemets, ou parenthèses
-- Phrases courtes et percutantes
 
-EXEMPLES DE PROGRESSION:
-Nuit 1: "Le brouillard engloutit le village des pêcheurs. Dans l'obscurité, quelque chose s'éveille."
-Nuit 2 après un mort: "Une deuxième nuit de terreur. Le sang de Marie hante encore les ruelles."
-Nuit 3: "Ils ne sont plus que sept. La bête a faim, et le lac ne rend jamais ses morts."
+BON STYLE:
+- "La nuit tombe sur le village. Les loups se réveillent, affamés."
+- "Pierre a été retrouvé mort ce matin. Qui sera le prochain ?"
+- "Le village doit voter. Trouvez le loup parmi vous."
 
-Réponds UNIQUEMENT avec la narration, sans introduction ni explication.`
+MAUVAIS STYLE:
+- "Les ténèbres engloutissent le hameau tel un linceul de désespoir..."
+- "L'astre lunaire baigne de sa lumière blafarde les âmes tourmentées..."
+
+Réponds UNIQUEMENT avec la narration.`
 
 function buildStoryPrompt(
   context: NarrationRequest['context'],
@@ -197,7 +201,7 @@ export default defineEventHandler(async (event) => {
     await waitForRateLimit()
 
     const genAI = new GoogleGenerativeAI(config.geminiApiKey)
-    const modelName = config.geminiModel || 'gemini-2.0-flash-exp'
+    const modelName = config.geminiModel || 'gemini-2.0-flash-lite'
     const model = genAI.getGenerativeModel({
       model: modelName,
       systemInstruction: SYSTEM_PROMPT
@@ -239,27 +243,27 @@ export default defineEventHandler(async (event) => {
 
 function getDefaultNarration(context: NarrationRequest['context'], data?: NarrationRequest['data']): string {
   const defaults: Record<NarrationRequest['context'], string> = {
-    night_start: 'Les ténèbres enveloppent le village. Quelque chose rôde dans l\'obscurité.',
-    werewolves_wake: 'Des yeux jaunes s\'ouvrent dans la nuit. La chasse commence.',
-    werewolves_done: 'Les prédateurs se fondent dans l\'ombre, satisfaits.',
-    seer_wake: 'La voyante ouvre les yeux. Les esprits lui murmurent des secrets.',
-    seer_done: 'La vision s\'estompe. La voyante garde ce fardeau pour elle.',
-    witch_wake: 'La sorcière s\'éveille. Ses potions luisent dans la pénombre.',
-    witch_done: 'Le choix est fait. La sorcière retourne au sommeil.',
-    day_start: 'L\'aube se lève, froide et cruelle. Le village retient son souffle.',
+    night_start: 'La nuit tombe sur le village. Fermez les yeux et dormez bien.',
+    werewolves_wake: 'Les loups-garous se réveillent et choisissent leur victime.',
+    werewolves_done: 'Les loups-garous se rendorment.',
+    seer_wake: 'La voyante se réveille. Elle peut découvrir le rôle d\'un joueur.',
+    seer_done: 'La voyante se rendort.',
+    witch_wake: 'La sorcière se réveille. Elle a une potion de vie et une potion de mort.',
+    witch_done: 'La sorcière se rendort.',
+    day_start: 'Le soleil se lève. Le village se réveille.',
     death_announce: data?.victimName
-      ? `Le corps de ${data.victimName} gît dans la brume matinale. La mort a encore frappé.`
-      : 'Un corps sans vie. La terreur grandit.',
-    vote_start: 'Les villageois se rassemblent, méfiants. Qui est le monstre parmi eux ?',
+      ? `${data.victimName} a été retrouvé mort ce matin.`
+      : 'Un villageois a été tué cette nuit.',
+    vote_start: 'Le village doit maintenant voter pour éliminer un suspect.',
     vote_result: data?.victimName
-      ? `${data.victimName} est traîné vers le bûcher. Justice sera faite.`
-      : 'Le verdict est tombé. Qu\'il soit juste ou non.',
+      ? `Le village a décidé d'éliminer ${data.victimName}.`
+      : 'Le village a rendu son verdict.',
     hunter_death: data?.victimName
-      ? `${data.victimName} dégaine son arme d'une main tremblante. Un dernier acte de bravoure.`
-      : 'Le chasseur ne partira pas seul.',
+      ? `${data.victimName} était le chasseur ! Il peut tirer sur quelqu'un avant de mourir.`
+      : 'Le chasseur tire une dernière fois.',
     game_end: data?.winner === 'village'
-      ? 'Le dernier loup s\'effondre. Le village peut enfin respirer.'
-      : 'Le silence règne. Les loups ont gagné.'
+      ? 'Félicitations ! Le village a éliminé tous les loups-garous !'
+      : 'Les loups-garous ont gagné. Ils ont dévoré le village.'
   }
   return defaults[context]
 }

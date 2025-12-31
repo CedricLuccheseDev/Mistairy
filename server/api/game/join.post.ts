@@ -1,6 +1,6 @@
 import { serverSupabaseClient } from '#supabase/server'
-import type { Database } from '../../../shared/types/database.types'
-import { MAX_PLAYERS } from '../../../shared/config/game.config'
+import type { Database, GameSettings } from '../../../shared/types/database.types'
+import { DEFAULT_SETTINGS } from '../../../shared/config/game.config'
 import { logger } from '../../utils/logger'
 
 export default defineEventHandler(async (event) => {
@@ -48,10 +48,14 @@ export default defineEventHandler(async (event) => {
     .select('id')
     .eq('game_id', game.id)
 
-  if (existingPlayers && existingPlayers.length >= MAX_PLAYERS) {
+  // Get max_players from game settings, fallback to global MAX_PLAYERS
+  const settings = game.settings as GameSettings | null
+  const maxPlayers = settings?.max_players ?? DEFAULT_SETTINGS.max_players
+
+  if (existingPlayers && existingPlayers.length >= maxPlayers) {
     throw createError({
       statusCode: 400,
-      message: `La partie est complète (${MAX_PLAYERS} joueurs max)`
+      message: `La partie est complète (${maxPlayers} joueurs max)`
     })
   }
 
