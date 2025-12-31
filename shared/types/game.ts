@@ -4,7 +4,9 @@ export type GameStatus = 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter'
 
 export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter'
 
-export type NightActionType = 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'witch_skip' | 'hunter_kill'
+export type NightActionType = 'werewolf_kill' | 'werewolf_skip' | 'seer_view' | 'seer_skip' | 'witch_save' | 'witch_kill' | 'witch_skip' | 'hunter_kill' | 'hunter_skip'
+
+export type NightRole = 'seer' | 'werewolf' | 'witch'
 
 export interface Game {
   id: string
@@ -17,6 +19,7 @@ export interface Game {
   host_id: string | null
   settings: GameSettings
   hunter_target_pending?: string | null
+  current_night_role?: NightRole | null
 }
 
 export interface Player {

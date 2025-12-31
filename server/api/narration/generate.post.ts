@@ -8,13 +8,14 @@ const AI_CONTEXTS: NarrationContext[] = [
   'werewolves_wake',
   'day_start',
   'death_announce',
+  'vote_start',
   'vote_result',
   'hunter_death',
   'game_end'
 ]
 
 // Contexts that use fallback (simple transitions, no story value)
-// werewolves_done, seer_wake, seer_done, witch_wake, witch_done, vote_start
+// werewolves_done, seer_wake, seer_done, witch_wake, witch_done
 
 interface NarrationRequest {
   context: NarrationContext
@@ -90,34 +91,30 @@ function getOrCreateStoryContext(gameId?: string): { theme: string; events: stri
   return context
 }
 
-const SYSTEM_PROMPT = `Tu es le maître du jeu d'une partie de Loup-Garou entre amis. Ton rôle est d'animer le jeu avec une narration claire et immersive.
+const SYSTEM_PROMPT = `Tu es le maître du jeu d'une partie de Loup-Garou entre amis.
 
-OBJECTIF: Créer une ambiance fun et mystérieuse qui aide les joueurs à se plonger dans le jeu, sans les perdre avec du texte trop littéraire.
+RÈGLE #1 ABSOLUE: Tu ne dois JAMAIS inventer de nom. Si un NOM est fourni dans [JOUEUR: xxx], tu utilises EXACTEMENT ce nom. Si aucun nom n'est fourni, tu ne mentionnes PAS de nom.
 
-RÈGLES:
-- Maximum 2 phrases courtes (40 mots max)
-- Langage simple et direct, compréhensible par tous
-- Un peu de suspense mais pas de romance ou de poésie excessive
-- Mentionne les événements concrets de la partie (noms des joueurs, ce qui s'est passé)
-- Garde un ton légèrement dramatique mais accessible
+FORMAT: SSML
 
-CE QU'IL FAUT ÉVITER:
-- Les métaphores trop poétiques ou abstraites
-- Les descriptions longues et fleuries
-- Le vocabulaire complexe ou précieux
-- Les phrases qui ne font pas avancer le jeu
-- JAMAIS d'emojis, guillemets, ou parenthèses
+STYLE:
+- Langage simple mais avec une touche de mystère
+- Ambiance légèrement inquiétante, comme un conte pour ados
+- INTRO: 3-4 phrases pour poser le décor du village
+- Autres scènes: 1-2 phrases avec un peu de suspense
 
-BON STYLE:
-- "La nuit tombe sur le village. Les loups se réveillent, affamés."
-- "Pierre a été retrouvé mort ce matin. Qui sera le prochain ?"
-- "Le village doit voter. Trouvez le loup parmi vous."
+SSML:
+- <emphasis level="strong">NOM</emphasis> pour les noms
+- <break time="Xms"/> pour les pauses
 
-MAUVAIS STYLE:
-- "Les ténèbres engloutissent le hameau tel un linceul de désespoir..."
-- "L'astre lunaire baigne de sa lumière blafarde les âmes tourmentées..."
+INTERDIT:
+- Vocabulaire trop littéraire (funeste, crépuscule, etc.)
+- Longues métaphores
+- Inventer des noms
+- Emojis, guillemets, parenthèses
+- Balise <speak>
 
-Réponds UNIQUEMENT avec la narration.`
+Réponds UNIQUEMENT avec la narration SSML.`
 
 function buildStoryPrompt(
   context: NarrationRequest['context'],
@@ -126,35 +123,40 @@ function buildStoryPrompt(
 ): string {
   const parts: string[] = []
 
-  // Add story theme
-  parts.push(`THÈME DU VILLAGE: ${story.theme}`)
-
-  // Add previous events for continuity
-  if (story.events.length > 0) {
-    parts.push(`ÉVÉNEMENTS PASSÉS: ${story.events.slice(-5).join('. ')}`)
-  }
+  // Add story theme for atmosphere
+  parts.push(`AMBIANCE: ${story.theme}`)
 
   // Add current game state
-  if (data?.dayNumber) parts.push(`Jour/Nuit: ${data.dayNumber}`)
+  if (data?.dayNumber) parts.push(`Nuit/Jour: ${data.dayNumber}`)
   if (data?.aliveCount) parts.push(`Survivants: ${data.aliveCount}`)
-  if (data?.deadPlayers?.length) parts.push(`Morts: ${data.deadPlayers.join(', ')}`)
-  if (data?.playerNames?.length) parts.push(`Vivants: ${data.playerNames.slice(0, 5).join(', ')}`)
 
-  // Add context-specific instruction
+  // Build context-specific instruction with player name clearly marked
   const contextInstructions: Record<NarrationRequest['context'], string> = {
-    night_start: `SCÈNE: La nuit ${data?.dayNumber || 1} commence. Le village s'endort dans la peur.`,
-    werewolves_wake: 'SCÈNE: Les loups-garous ouvrent les yeux, affamés.',
-    werewolves_done: 'SCÈNE: Les loups ont choisi leur proie. Ils se rendorment, repus.',
-    seer_wake: 'SCÈNE: La voyante s\'éveille, ses dons la tourmentent.',
-    seer_done: 'SCÈNE: La voyante a vu. Ce secret pèse lourd.',
-    witch_wake: 'SCÈNE: La sorcière contemple ses fioles. Vie ou mort ?',
-    witch_done: 'SCÈNE: La sorcière a fait son choix. Retour au silence.',
-    day_start: `SCÈNE: L'aube du jour ${data?.dayNumber || 1}. Le village découvre l'horreur.`,
-    death_announce: `SCÈNE: ${data?.victimName || 'Quelqu\'un'} est mort ${data?.killedBy === 'werewolves' ? 'dévoré par les loups' : data?.killedBy === 'witch' ? 'empoisonné' : data?.killedBy === 'hunter' ? 'abattu par le chasseur' : 'lynché'}.`,
-    vote_start: 'SCÈNE: Le village se rassemble. Il faut trouver le coupable.',
-    vote_result: `SCÈNE: ${data?.victimName || 'Un suspect'} est condamné par le village. Justice ou erreur ?`,
-    hunter_death: `SCÈNE: ${data?.victimName || 'Le chasseur'} révèle son arme ! Un dernier tir.`,
-    game_end: `SCÈNE: FIN DE PARTIE. ${data?.winner === 'village' ? 'Le village a survécu aux ténèbres.' : 'Les loups ont dévoré le dernier innocent.'}`
+    night_start: (data?.dayNumber || 1) === 1
+      ? `INTRO: Présente ce village mystérieux en 3-4 phrases. Crée une ambiance un peu inquiétante. Termine par "Fermez les yeux".`
+      : `SCÈNE: Nuit ${data?.dayNumber}. Le village s'endort à nouveau.`,
+    werewolves_wake: 'SCÈNE: Les loups-garous se réveillent et choisissent une victime.',
+    werewolves_done: 'SCÈNE: Les loups-garous se rendorment.',
+    seer_wake: 'SCÈNE: La voyante se réveille et découvre un rôle.',
+    seer_done: 'SCÈNE: La voyante se rendort.',
+    witch_wake: 'SCÈNE: La sorcière se réveille avec ses potions.',
+    witch_done: 'SCÈNE: La sorcière se rendort.',
+    day_start: data?.victimName
+      ? `SCÈNE: Le jour ${data?.dayNumber || 1} se lève. [JOUEUR: ${data.victimName}] a été trouvé mort cette nuit (${data.killedBy === 'werewolves' ? 'dévoré par les loups' : data.killedBy === 'witch' ? 'empoisonné' : 'tué'}). Annonce le lever du jour et la mort.`
+      : `SCÈNE: Le jour ${data?.dayNumber || 1} se lève. Personne n'est mort cette nuit.`,
+    death_announce: data?.victimName
+      ? `[JOUEUR: ${data.victimName}] est mort cette nuit (${data.killedBy === 'werewolves' ? 'dévoré par les loups' : data.killedBy === 'witch' ? 'empoisonné' : 'tué'}). Annonce sa mort de façon dramatique.`
+      : 'SCÈNE: Personne n\'est mort cette nuit.',
+    vote_start: 'SCÈNE: Le village doit voter pour éliminer un suspect.',
+    vote_result: data?.victimName
+      ? `[JOUEUR: ${data.victimName}] a été éliminé par le vote du village. Annonce son élimination.`
+      : 'SCÈNE: Le village n\'a pas réussi à se décider.',
+    hunter_death: data?.victimName
+      ? `[JOUEUR: ${data.victimName}] était le chasseur! Il peut tirer sur quelqu'un avant de mourir.`
+      : 'SCÈNE: Le chasseur peut tirer une dernière fois.',
+    game_end: data?.winner === 'village'
+      ? 'SCÈNE: FIN - Le village a gagné! Tous les loups sont morts.'
+      : 'SCÈNE: FIN - Les loups-garous ont gagné!'
   }
 
   parts.push(contextInstructions[context])
@@ -189,7 +191,10 @@ export default defineEventHandler(async (event) => {
   // Skip AI for simple transition contexts or if no API key
   const shouldUseAI = config.geminiApiKey && AI_CONTEXTS.includes(body.context)
 
+  console.log(`[Narration] Context: ${body.context}, useAI: ${shouldUseAI}, data: ${JSON.stringify(body.data)}`)
+
   if (!shouldUseAI) {
+    console.log(`[Narration] Using fallback for ${body.context}`)
     return {
       narration: getDefaultNarration(body.context, body.data),
       storyTheme: story.theme
@@ -209,15 +214,21 @@ export default defineEventHandler(async (event) => {
 
     const userPrompt = buildStoryPrompt(body.context, body.data, story)
 
+    // Increase tokens for intro (night 1)
+    const isIntro = body.context === 'night_start' && (body.data?.dayNumber || 1) === 1
+    const maxTokens = isIntro ? 200 : 100
+
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       generationConfig: {
-        maxOutputTokens: 100,
+        maxOutputTokens: maxTokens,
         temperature: 0.85
       }
     })
 
     const narration = result.response.text()?.trim() || getDefaultNarration(body.context, body.data)
+
+    console.log(`[Narration] AI generated for ${body.context}: ${narration.substring(0, 80)}...`)
 
     // Record significant events for story continuity
     if (body.context === 'death_announce' && body.data?.victimName) {
@@ -233,7 +244,7 @@ export default defineEventHandler(async (event) => {
     }
   }
   catch (error) {
-    console.error('Narration generation error:', error)
+    console.error(`[Narration] AI error for ${body.context}:`, error)
     return {
       narration: getDefaultNarration(body.context, body.data),
       storyTheme: story.theme
@@ -242,28 +253,29 @@ export default defineEventHandler(async (event) => {
 })
 
 function getDefaultNarration(context: NarrationRequest['context'], data?: NarrationRequest['data']): string {
+  // Default narrations with SSML for natural speech
   const defaults: Record<NarrationRequest['context'], string> = {
-    night_start: 'La nuit tombe sur le village. Fermez les yeux et dormez bien.',
-    werewolves_wake: 'Les loups-garous se réveillent et choisissent leur victime.',
-    werewolves_done: 'Les loups-garous se rendorment.',
-    seer_wake: 'La voyante se réveille. Elle peut découvrir le rôle d\'un joueur.',
-    seer_done: 'La voyante se rendort.',
-    witch_wake: 'La sorcière se réveille. Elle a une potion de vie et une potion de mort.',
-    witch_done: 'La sorcière se rendort.',
-    day_start: 'Le soleil se lève. Le village se réveille.',
+    night_start: 'La nuit tombe sur le village.<break time="400ms"/> Fermez les yeux,<break time="200ms"/> et dormez bien.',
+    werewolves_wake: 'Les <emphasis level="moderate">loups-garous</emphasis> se réveillent.<break time="400ms"/> Ils choisissent leur victime.',
+    werewolves_done: 'Les loups-garous se rendorment.<break time="300ms"/> Satisfaits.',
+    seer_wake: 'La <emphasis level="moderate">voyante</emphasis> se réveille.<break time="400ms"/> Elle peut découvrir le rôle d\'un joueur.',
+    seer_done: 'La voyante se rendort,<break time="200ms"/> gardant son secret.',
+    witch_wake: 'La <emphasis level="moderate">sorcière</emphasis> se réveille.<break time="400ms"/> Elle a une potion de vie,<break time="200ms"/> et une potion de mort.',
+    witch_done: 'La sorcière se rendort.<break time="300ms"/> Son choix est fait.',
+    day_start: 'Le soleil se lève.<break time="500ms"/> Le village se réveille.',
     death_announce: data?.victimName
-      ? `${data.victimName} a été retrouvé mort ce matin.`
-      : 'Un villageois a été tué cette nuit.',
-    vote_start: 'Le village doit maintenant voter pour éliminer un suspect.',
+      ? `<emphasis level="strong">${data.victimName}</emphasis> a été retrouvé <emphasis level="moderate">mort</emphasis> ce matin.<break time="500ms"/>`
+      : 'Un villageois a été <emphasis level="moderate">tué</emphasis> cette nuit.<break time="500ms"/>',
+    vote_start: 'Le village doit maintenant voter.<break time="400ms"/> Trouvez le <emphasis level="moderate">loup</emphasis> parmi vous.',
     vote_result: data?.victimName
-      ? `Le village a décidé d'éliminer ${data.victimName}.`
-      : 'Le village a rendu son verdict.',
+      ? `Le village a décidé d'éliminer <emphasis level="strong">${data.victimName}</emphasis>.<break time="400ms"/>`
+      : 'Le village a rendu son verdict.<break time="400ms"/>',
     hunter_death: data?.victimName
-      ? `${data.victimName} était le chasseur ! Il peut tirer sur quelqu'un avant de mourir.`
-      : 'Le chasseur tire une dernière fois.',
+      ? `<emphasis level="strong">${data.victimName}</emphasis> était le chasseur!<break time="400ms"/> Il peut tirer sur quelqu'un avant de mourir.`
+      : 'Le <emphasis level="moderate">chasseur</emphasis> tire une dernière fois.<break time="400ms"/>',
     game_end: data?.winner === 'village'
-      ? 'Félicitations ! Le village a éliminé tous les loups-garous !'
-      : 'Les loups-garous ont gagné. Ils ont dévoré le village.'
+      ? '<prosody rate="slow">Félicitations!</prosody><break time="500ms"/> Le village a éliminé tous les <emphasis level="moderate">loups-garous</emphasis>!'
+      : 'Les <emphasis level="moderate">loups-garous</emphasis> ont gagné.<break time="500ms"/> Ils ont dévoré le village.'
   }
   return defaults[context]
 }

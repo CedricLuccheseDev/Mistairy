@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
-import type { Player } from '#shared/types/game'
 
 type Game = Database['public']['Tables']['games']['Row']
-type DbPlayer = Database['public']['Tables']['players']['Row']
+type Player = Database['public']['Tables']['players']['Row']
 
 /* --- Props --- */
 const props = defineProps<{
   game: Game
-  currentPlayer: DbPlayer
-  alivePlayers: DbPlayer[]
+  currentPlayer: Player
+  alivePlayers: Player[]
 }>()
 
 /* --- Services --- */
@@ -18,6 +17,7 @@ const toast = useToast()
 /* --- States --- */
 const hasVoted = ref(false)
 const isSubmitting = ref(false)
+const selectedId = ref<string | null>(null)
 
 /* --- Computed --- */
 const targets = computed(() =>
@@ -28,14 +28,16 @@ const targets = computed(() =>
 async function selectAndVote(player: Player) {
   if (hasVoted.value || isSubmitting.value) return
 
+  selectedId.value = player.id
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/vote', {
+    await $fetch('/api/game/action', {
       method: 'POST',
       body: {
         gameId: props.game.id,
         playerId: props.currentPlayer.id,
+        actionType: 'vote',
         targetId: player.id
       }
     })
@@ -46,6 +48,7 @@ async function selectAndVote(player: Player) {
   catch (e) {
     console.error('Vote failed:', e)
     toast.add({ title: 'Erreur, réessaie', color: 'error' })
+    selectedId.value = null
   }
   finally {
     isSubmitting.value = false
@@ -54,55 +57,102 @@ async function selectAndVote(player: Player) {
 </script>
 
 <template>
-  <div class="rounded-2xl border border-orange-500/30 bg-orange-950/30 backdrop-blur-sm overflow-hidden">
-    <!-- Header -->
-    <div class="p-4 border-b border-white/10">
-      <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-full bg-orange-900/50 flex items-center justify-center text-2xl animate-attention">
-          🗳️
-        </div>
-        <div class="flex-1">
-          <p class="font-bold text-orange-400">Le village vote</p>
-          <p class="text-neutral-500 text-sm">Qui est le loup-garou ?</p>
-        </div>
-      </div>
-    </div>
+  <div class="flex-1 flex flex-col relative min-h-0 overflow-visible">
+    <!-- Background particles -->
+    <GamePhaseParticles phase="vote" intensity="high" />
 
-    <!-- Content -->
-    <div class="p-4">
-      <!-- Dead player view -->
-      <div v-if="!currentPlayer.is_alive" class="text-center py-6">
-        <div class="text-4xl mb-2 opacity-70">💀</div>
-        <p class="text-neutral-300 font-medium">Éliminé</p>
-        <p class="text-neutral-500 text-sm">Tu observes en silence...</p>
-      </div>
+    <!-- All background effects teleported to body to avoid clipping -->
+    <Teleport to="body">
+      <!-- Urgency background pulse -->
+      <div class="fixed inset-0 animate-urgency pointer-events-none -z-10" />
 
-      <!-- Vote form -->
-      <template v-else-if="!hasVoted">
-        <div class="grid grid-cols-2 gap-2">
-          <button
-            v-for="target in targets"
-            :key="target.id"
-            class="p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-orange-950/50 hover:border-orange-500/50 transition-all text-center disabled:opacity-50"
-            :disabled="isSubmitting"
-            @click="selectAndVote(target as unknown as Player)"
-          >
-            <div class="text-2xl mb-1">👤</div>
-            <p class="text-white text-sm font-medium truncate">{{ target.name }}</p>
-          </button>
+      <!-- Icon glow (radial gradient) -->
+      <div
+        class="fixed inset-0 pointer-events-none -z-10"
+        style="background: radial-gradient(ellipse 80% 60% at 50% 33%, rgba(249, 115, 22, 0.5) 0%, transparent 70%);"
+      />
+    </Teleport>
+
+    <!-- Radial glow (inside component, no blur) -->
+    <div class="absolute inset-0 bg-gradient-radial from-orange-500/20 via-transparent to-transparent pointer-events-none" />
+
+    <!-- Main Content -->
+    <div class="relative z-10 flex-1 flex flex-col justify-center overflow-visible">
+      <!-- Header -->
+      <div class="text-center pb-4 px-4 animate-fade-up">
+        <!-- Vote Icon -->
+        <div class="relative inline-block mb-4">
+          <div class="text-7xl sm:text-8xl animate-attention">🗳️</div>
         </div>
 
-        <p v-if="isSubmitting" class="text-center text-neutral-500 text-sm animate-pulse mt-4">
-          Envoi du vote...
+        <!-- Title -->
+        <h1 class="text-3xl sm:text-4xl font-black tracking-tight text-orange-400 mb-2">
+          Le village vote
+        </h1>
+
+        <!-- Subtitle -->
+        <p class="text-lg sm:text-xl text-white/60">
+          {{ currentPlayer.is_alive ? 'Qui est le loup-garou ?' : 'Tu observes depuis l\'au-delà...' }}
         </p>
-      </template>
+      </div>
 
-      <!-- Vote submitted -->
-      <div v-else class="text-center py-6">
-        <div class="text-4xl mb-2">✅</div>
-        <p class="text-green-400 font-medium">Vote enregistré</p>
-        <p class="text-neutral-500 text-sm">Attends les autres...</p>
+      <!-- Content -->
+      <div class="px-4 pb-6">
+        <!-- Dead player view -->
+        <div v-if="!currentPlayer.is_alive" class="flex-1 flex flex-col items-center justify-center py-12 animate-fade-up">
+          <div class="text-center">
+            <div class="text-6xl mb-6 opacity-50">💀</div>
+            <p class="text-2xl font-bold text-white/70 mb-2">Éliminé</p>
+            <p class="text-lg text-white/40">Tu observes en silence...</p>
+          </div>
+        </div>
+
+        <!-- Vote form -->
+        <template v-else-if="!hasVoted">
+          <div class="animate-fade-up">
+            <GameTargetGrid
+              :targets="targets"
+              :disabled="isSubmitting"
+              :loading="isSubmitting"
+              :selected-id="selectedId"
+              color="orange"
+              @select="selectAndVote"
+            />
+          </div>
+        </template>
+
+        <!-- Vote submitted -->
+        <div v-else class="relative flex-1 flex flex-col items-center justify-center py-12 animate-scale-in">
+          <!-- Success glow (absolute, centered) -->
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 blur-3xl opacity-30 bg-green-500 rounded-full pointer-events-none" />
+
+          <div class="relative text-center">
+            <!-- Success icon -->
+            <div class="mb-6">
+              <div class="text-7xl animate-check-pop">✅</div>
+            </div>
+
+            <!-- Title -->
+            <p class="text-2xl font-bold text-green-400 mb-2">Vote enregistré</p>
+
+            <!-- Subtitle -->
+            <p class="text-lg text-white/40">Attends les autres joueurs...</p>
+
+            <!-- Waiting animation -->
+            <div class="flex items-center justify-center gap-2 mt-6 text-orange-400">
+              <div class="w-2 h-2 rounded-full bg-current animate-bounce" style="animation-delay: 0s" />
+              <div class="w-2 h-2 rounded-full bg-current animate-bounce" style="animation-delay: 0.1s" />
+              <div class="w-2 h-2 rounded-full bg-current animate-bounce" style="animation-delay: 0.2s" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.bg-gradient-radial {
+  background: radial-gradient(ellipse at top, var(--tw-gradient-stops));
+}
+</style>

@@ -1,5 +1,21 @@
 type NarrationContext = 'night_start' | 'werewolves_wake' | 'werewolves_done' | 'seer_wake' | 'seer_done' | 'witch_wake' | 'witch_done' | 'day_start' | 'death_announce' | 'vote_start' | 'vote_result' | 'hunter_death' | 'game_end'
 
+// Strip SSML tags for display purposes (exported for use in components)
+export function stripSSML(text: string): string {
+  return text
+    // Remove break tags
+    .replace(/<break[^>]*\/?>/gi, ' ')
+    // Remove emphasis tags but keep content
+    .replace(/<emphasis[^>]*>(.*?)<\/emphasis>/gi, '$1')
+    // Remove prosody tags but keep content
+    .replace(/<prosody[^>]*>(.*?)<\/prosody>/gi, '$1')
+    // Remove any other XML tags
+    .replace(/<[^>]+>/g, '')
+    // Clean up multiple spaces
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 interface NarrationData {
   victimName?: string
   killedBy?: 'werewolves' | 'witch' | 'hunter' | 'village'
@@ -184,7 +200,9 @@ export function useNarrator() {
 
       window.speechSynthesis.cancel()
 
-      const utterance = new SpeechSynthesisUtterance(text)
+      // Strip SSML tags for browser TTS (it doesn't understand SSML)
+      const cleanText = stripSSML(text)
+      const utterance = new SpeechSynthesisUtterance(cleanText)
       utterance.lang = 'fr-FR'
       utterance.rate = options?.rate ?? 0.85
       utterance.pitch = options?.pitch ?? 0.95
@@ -370,15 +388,16 @@ export function useNarrator() {
         body: { context, data }
       })
 
-      const narration = response.narration || getDefaultMessage(context, data)
-      await speak(narration, { ...options, voiceType })
-      return narration
+      const ssmlNarration = response.narration || getDefaultMessage(context, data)
+      await speak(ssmlNarration, { ...options, voiceType })
+      // Return clean text for display (without SSML tags)
+      return stripSSML(ssmlNarration)
     }
     catch (error) {
       console.error('AI narration failed:', error)
       const fallback = getDefaultMessage(context, data)
       await speak(fallback, { ...options, voiceType })
-      return fallback
+      return stripSSML(fallback)
     }
     finally {
       isGenerating.value = false
@@ -473,28 +492,31 @@ export function useNarrator() {
      ═══════════════════════════════════════════ */
 
   function getDefaultMessage(context: NarrationContext, data?: NarrationData): string {
+    // Default messages with SSML for natural speech pauses and emphasis
     const messages: Record<NarrationContext, string> = {
-      night_start: 'La nuit tombe sur le village. Fermez les yeux.',
-      werewolves_wake: 'Les loups-garous se réveillent et choisissent leur victime.',
-      werewolves_done: 'Les loups-garous se rendorment.',
-      seer_wake: 'La voyante se réveille. Elle peut découvrir un rôle.',
-      seer_done: 'La voyante se rendort.',
-      witch_wake: 'La sorcière se réveille avec ses potions.',
-      witch_done: 'La sorcière se rendort.',
-      day_start: 'Le soleil se lève. Le village se réveille.',
+      night_start: 'La nuit tombe sur le village.<break time="400ms"/> Fermez les yeux.',
+      werewolves_wake: 'Les <emphasis level="moderate">loups-garous</emphasis> se réveillent.<break time="300ms"/> Ils choisissent leur victime.',
+      werewolves_done: 'Les loups-garous se rendorment.<break time="300ms"/>',
+      seer_wake: 'La <emphasis level="moderate">voyante</emphasis> se réveille.<break time="300ms"/> Elle peut découvrir un rôle.',
+      seer_done: 'La voyante se rendort.<break time="300ms"/>',
+      witch_wake: 'La <emphasis level="moderate">sorcière</emphasis> se réveille avec ses potions.<break time="300ms"/>',
+      witch_done: 'La sorcière se rendort.<break time="300ms"/>',
+      day_start: data?.victimName
+        ? `Le soleil se lève.<break time="400ms"/> <emphasis level="strong">${data.victimName}</emphasis> a été trouvé <emphasis level="moderate">mort</emphasis> ce matin.`
+        : 'Le soleil se lève.<break time="400ms"/> Le village se réveille. Personne n\'est mort cette nuit.',
       death_announce: data?.victimName
-        ? `${data.victimName} a été retrouvé mort ce matin.`
-        : 'Un villageois a été tué cette nuit.',
-      vote_start: 'Le village doit voter pour éliminer un suspect.',
+        ? `<emphasis level="strong">${data.victimName}</emphasis> a été retrouvé <emphasis level="moderate">mort</emphasis> ce matin.<break time="500ms"/>`
+        : 'Un villageois a été <emphasis level="moderate">tué</emphasis> cette nuit.<break time="500ms"/>',
+      vote_start: 'Le village doit voter.<break time="300ms"/> Trouvez le <emphasis level="moderate">loup</emphasis> parmi vous.',
       vote_result: data?.victimName
-        ? `Le village a décidé d'éliminer ${data.victimName}.`
-        : 'Le village a rendu son verdict.',
+        ? `Le village a décidé d'éliminer <emphasis level="strong">${data.victimName}</emphasis>.<break time="400ms"/>`
+        : 'Le village a rendu son verdict.<break time="400ms"/>',
       hunter_death: data?.victimName
-        ? `${data.victimName} était le chasseur ! Il peut tirer sur quelqu'un.`
-        : 'Le chasseur tire une dernière fois.',
+        ? `<emphasis level="strong">${data.victimName}</emphasis> était le chasseur!<break time="400ms"/> Il peut tirer sur quelqu'un.`
+        : 'Le <emphasis level="moderate">chasseur</emphasis> tire une dernière fois.<break time="400ms"/>',
       game_end: data?.winner === 'village'
-        ? 'Félicitations ! Le village a éliminé tous les loups-garous !'
-        : 'Les loups-garous ont gagné. Ils ont dévoré le village.'
+        ? '<prosody rate="slow">Félicitations!</prosody><break time="500ms"/> Le village a éliminé tous les <emphasis level="moderate">loups-garous</emphasis>!'
+        : 'Les <emphasis level="moderate">loups-garous</emphasis> ont gagné.<break time="500ms"/> Ils ont dévoré le village.'
     }
     return messages[context]
   }

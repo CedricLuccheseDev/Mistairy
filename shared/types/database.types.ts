@@ -35,6 +35,7 @@ export type Database = {
           created_at: string
           host_id: string | null
           hunter_target_pending: string | null
+          current_night_role: 'seer' | 'werewolf' | 'witch' | null
         }
         Insert: {
           id?: string
@@ -47,6 +48,7 @@ export type Database = {
           created_at?: string
           host_id?: string | null
           hunter_target_pending?: string | null
+          current_night_role?: 'seer' | 'werewolf' | 'witch' | null
         }
         Update: {
           id?: string
@@ -59,6 +61,7 @@ export type Database = {
           created_at?: string
           host_id?: string | null
           hunter_target_pending?: string | null
+          current_night_role?: 'seer' | 'werewolf' | 'witch' | null
         }
         Relationships: [
           {
@@ -120,7 +123,7 @@ export type Database = {
           game_id: string
           day_number: number
           player_id: string
-          action_type: 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'witch_skip' | 'hunter_kill'
+          action_type: 'werewolf_kill' | 'werewolf_skip' | 'seer_view' | 'seer_skip' | 'witch_save' | 'witch_kill' | 'witch_skip' | 'hunter_kill' | 'hunter_skip'
           target_id: string | null
           created_at: string
         }
@@ -129,7 +132,7 @@ export type Database = {
           game_id: string
           day_number: number
           player_id: string
-          action_type: 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'witch_skip' | 'hunter_kill'
+          action_type: 'werewolf_kill' | 'werewolf_skip' | 'seer_view' | 'seer_skip' | 'witch_save' | 'witch_kill' | 'witch_skip' | 'hunter_kill' | 'hunter_skip'
           target_id?: string | null
           created_at?: string
         }
@@ -138,7 +141,7 @@ export type Database = {
           game_id?: string
           day_number?: number
           player_id?: string
-          action_type?: 'werewolf_vote' | 'seer_look' | 'witch_heal' | 'witch_kill' | 'witch_skip' | 'hunter_kill'
+          action_type?: 'werewolf_kill' | 'werewolf_skip' | 'seer_view' | 'seer_skip' | 'witch_save' | 'witch_kill' | 'witch_skip' | 'hunter_kill' | 'hunter_skip'
           target_id?: string | null
           created_at?: string
         }

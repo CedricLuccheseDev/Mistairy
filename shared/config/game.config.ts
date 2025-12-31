@@ -22,10 +22,10 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 // Valid actions per role
 export const ROLE_ACTIONS: Record<string, string[]> = {
-  werewolf: ['werewolf_vote'],
-  seer: ['seer_look'],
-  witch: ['witch_heal', 'witch_kill', 'witch_skip'],
-  hunter: ['hunter_kill']
+  werewolf: ['werewolf_kill'],
+  seer: ['seer_view'],
+  witch: ['witch_save', 'witch_kill', 'witch_skip'],
+  hunter: ['hunter_kill', 'hunter_skip']
 } as const
 
 // Role info with display name and team

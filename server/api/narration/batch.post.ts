@@ -50,13 +50,16 @@ function getOrCreateTheme(gameId?: string): string {
   return theme
 }
 
-const SYSTEM_PROMPT = `Tu génères des narrations pour un jeu de Loup-Garou.
+const SYSTEM_PROMPT = `Tu génères des narrations pour un jeu de Loup-Garou en SSML.
 
-STYLE: Conteur macabre, voix grave. Maximum 2 phrases (40 mots) par narration.
-PAS d'emojis, guillemets, ou parenthèses.
+RÈGLE ABSOLUE: Si un nom de joueur est donné avec [JOUEUR: xxx], utilise EXACTEMENT ce nom. Ne jamais inventer de nom!
 
-Tu reçois une liste de scènes à narrer. Réponds en JSON avec le format:
-{"narrations": {"context1": "narration1", "context2": "narration2", ...}}`
+STYLE: Conteur dramatique. 2 phrases max (40 mots) par narration.
+FORMAT SSML: <break time="Xms"/>, <emphasis level="strong">nom</emphasis>
+INTERDIT: emojis, guillemets, parenthèses, balise <speak>, noms inventés
+
+Réponds en JSON:
+{"narrations": {"context1": "narration SSML 1", "context2": "narration SSML 2", ...}}`
 
 const CONTEXT_PROMPTS: Record<NarrationContext, string> = {
   night_start: 'La nuit tombe sur le village',
@@ -119,9 +122,9 @@ export default defineEventHandler(async (event) => {
     for (const ctx of body.contexts) {
       let sceneDesc = CONTEXT_PROMPTS[ctx.context]
 
-      // Add contextual data
+      // Add contextual data with clear player name marker
       if (ctx.data?.victimName) {
-        sceneDesc += ` (victime: ${ctx.data.victimName})`
+        sceneDesc += ` [JOUEUR: ${ctx.data.victimName}]`
       }
       if (ctx.data?.killedBy) {
         const cause = ctx.data.killedBy === 'werewolves' ? 'loups' : ctx.data.killedBy === 'witch' ? 'poison' : ctx.data.killedBy === 'hunter' ? 'chasseur' : 'village'

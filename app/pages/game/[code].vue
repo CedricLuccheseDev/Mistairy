@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ROLES } from '#shared/types/game'
+import { stripSSML } from '~/composables/useNarrator'
 
 /* --- Route --- */
 const route = useRoute()
@@ -268,10 +269,10 @@ async function playPreamble() {
     narration = `Bienvenue dans ce village paisible... ${players.value.length} âmes s'apprêtent à vivre une nuit de terreur.`
   }
 
-  // Show the text on screen immediately
-  narrationText.value = narration
+  // Show the text on screen immediately (stripped of SSML tags for display)
+  narrationText.value = stripSSML(narration)
 
-  // Now speak and WAIT for the voice to finish
+  // Now speak and WAIT for the voice to finish (with SSML for TTS)
   await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
 
   // Small pause after voice ends before moving on
@@ -305,8 +306,8 @@ async function playNightNarration() {
     narration = `Nuit ${game.value.day_number}. Le village s'endort...`
   }
 
-  // Show text and speak
-  narrationText.value = narration
+  // Show text (stripped for display) and speak (with SSML)
+  narrationText.value = stripSSML(narration)
   await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
   await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -320,6 +321,11 @@ async function playDayNarration() {
 
   narrationPhase.value = 'day'
 
+  // Find victims from the latest night_end event
+  const nightEndEvent = events.value.find(e => e.event_type === 'night_end' && (e.data as Record<string, unknown>)?.day_number === game.value?.day_number)
+  const nightData = nightEndEvent?.data as { dead?: Array<{ name: string; killedBy?: string }> } | undefined
+  const victims = nightData?.dead || []
+
   // Get narration text
   let narration = ''
   try {
@@ -327,7 +333,12 @@ async function playDayNarration() {
       method: 'POST',
       body: {
         context: 'day_start',
-        data: { dayNumber: game.value.day_number, aliveCount: alivePlayers.value.length }
+        data: {
+          dayNumber: game.value.day_number,
+          aliveCount: alivePlayers.value.length,
+          victimName: victims[0]?.name,
+          killedBy: (victims[0]?.killedBy as 'werewolves' | 'witch' | 'hunter' | 'village') || 'werewolves'
+        }
       }
     })
     narration = response.narration || `Le soleil se lève sur le village...`
@@ -336,8 +347,8 @@ async function playDayNarration() {
     narration = `Le soleil se lève sur le village...`
   }
 
-  // Show text and speak
-  narrationText.value = narration
+  // Show text (stripped for display) and speak (with SSML)
+  narrationText.value = stripSSML(narration)
   await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
   await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -367,8 +378,8 @@ async function playVoteNarration() {
     narration = `L'heure du jugement a sonné...`
   }
 
-  // Show text and speak
-  narrationText.value = narration
+  // Show text (stripped for display) and speak (with SSML)
+  narrationText.value = stripSSML(narration)
   await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
   await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -377,13 +388,25 @@ async function playVoteNarration() {
   }
 }
 
-function skipNarration() {
+async function skipNarration() {
   const wasIntro = narrationPhase.value === 'intro'
   narrator.stop()
   narrationPhase.value = null
-  // If it was intro, show role modal
+  // If it was intro, show role modal and start night immediately
   if (wasIntro) {
     showRoleModal.value = true
+    // Host triggers the transition to night immediately when skipping
+    if (isHost.value && game.value?.id) {
+      try {
+        await $fetch('/api/game/start-night', {
+          method: 'POST',
+          body: { gameId: game.value.id }
+        })
+      }
+      catch (e) {
+        console.error('Failed to start night phase:', e)
+      }
+    }
   }
 }
 
@@ -488,17 +511,9 @@ watch(() => events.value, async (newEvents) => {
 
   lastEventId.value = latestEvent.id
 
-  // Narrate death announcements
-  if (latestEvent.event_type === 'night_end') {
-    const data = latestEvent.data as { dead?: Array<{ name: string }> }
-    if (data.dead && data.dead.length > 0) {
-      for (const victim of data.dead) {
-        await narrator.narrate.death(victim.name, 'werewolves')
-      }
-    }
-  }
+  // Note: night deaths are now announced in day_start narration
   // Narrate vote results
-  else if (latestEvent.event_type === 'vote_result' || latestEvent.event_type === 'player_eliminated') {
+  if (latestEvent.event_type === 'vote_result' || latestEvent.event_type === 'player_eliminated') {
     const data = latestEvent.data as { playerName?: string; eliminated?: string }
     const victimName = data.playerName
     if (victimName) {
@@ -866,7 +881,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Center Content: Phase + Actions -->
-        <div class="flex-1 flex flex-col items-center justify-center px-4 pb-32">
+        <div class="flex-1 flex flex-col items-center justify-center px-4 pb-32 overflow-visible">
           <!-- Lobby -->
           <template v-if="game.status === 'lobby'">
             <div class="w-full max-w-md animate-fade-up">
@@ -985,9 +1000,9 @@ onUnmounted(() => {
             </div>
           </template>
 
-          <!-- Game Phases -->
+          <!-- Game Phases (full width for immersive gaming UI) -->
           <template v-else>
-            <div class="w-full max-w-md">
+            <div class="w-full max-w-2xl flex flex-col flex-1 min-h-0 overflow-visible">
               <PhasesNightPhase
                 v-if="game.status === 'night'"
                 :game="game"

@@ -15,52 +15,43 @@ const props = defineProps<{
 /* --- States --- */
 const hasActed = ref(false)
 const seerResult = ref<{ name: string; role: string; emoji: string } | null>(null)
-const nightActions = ref<{ action_type: string }[]>([])
+const lastNarratedRole = ref<string | null>(null)
 
 /* --- Services --- */
-const client = useSupabaseClient<Database>()
-
-async function fetchNightActions() {
-  const { data } = await client
-    .from('night_actions')
-    .select('action_type')
-    .eq('game_id', props.game.id)
-    .eq('day_number', props.game.day_number)
-
-  if (data) nightActions.value = data
-}
-
-onMounted(() => fetchNightActions())
-
-watch(() => props.game.day_number, () => {
-  fetchNightActions()
-  hasActed.value = false
-  seerResult.value = null
-})
+const { narrate } = useNarrator()
 
 /* --- Role config --- */
 const roleConfig = {
-  werewolf: { icon: '🐺', label: 'Les Loups-Garous', action: 'choisissent leur victime...', bg: 'bg-red-950/50', border: 'border-red-500/30', text: 'text-red-400' },
-  seer: { icon: '🔮', label: 'La Voyante', action: 'observe le village...', bg: 'bg-violet-950/50', border: 'border-violet-500/30', text: 'text-violet-400' },
-  witch: { icon: '🧪', label: 'La Sorcière', action: 'prépare ses potions...', bg: 'bg-emerald-950/50', border: 'border-emerald-500/30', text: 'text-emerald-400' },
-  waiting: { icon: '⏳', label: 'En attente', action: 'Transition...', bg: 'bg-neutral-900/50', border: 'border-neutral-500/30', text: 'text-neutral-400' }
+  werewolf: {
+    icon: '🐺',
+    label: 'Les Loups-Garous',
+    action: 'Choisissez votre victime',
+    color: 'red' as const
+  },
+  seer: {
+    icon: '🔮',
+    label: 'La Voyante',
+    action: 'Découvrez un rôle',
+    color: 'violet' as const
+  },
+  witch: {
+    icon: '🧪',
+    label: 'La Sorcière',
+    action: 'Utilisez vos potions',
+    color: 'emerald' as const
+  },
+  waiting: {
+    icon: '🌙',
+    label: 'La nuit...',
+    action: 'Le village dort',
+    color: 'violet' as const
+  }
 }
 
 /* --- Computed --- */
+// Use game.current_night_role directly from the server
 const currentActiveRole = computed((): 'werewolf' | 'seer' | 'witch' | 'waiting' => {
-  const hasWerewolfAction = nightActions.value.some(a => a.action_type === 'werewolf_vote')
-  const hasSeerAction = nightActions.value.some(a => a.action_type === 'seer_look')
-  const hasWitchAction = nightActions.value.some(a => ['witch_heal', 'witch_kill', 'witch_skip'].includes(a.action_type))
-
-  const hasWerewolves = props.alivePlayers.some(p => p.role === 'werewolf')
-  const hasSeer = props.alivePlayers.some(p => p.role === 'seer')
-  const hasWitch = props.alivePlayers.some(p => p.role === 'witch')
-
-  // Order: Seer (Voyante) → Werewolf (Loup-Garou) → Witch (Sorcière)
-  if (hasSeer && !hasSeerAction) return 'seer'
-  if (hasWerewolves && !hasWerewolfAction) return 'werewolf'
-  if (hasWitch && !hasWitchAction) return 'witch'
-  return 'waiting'
+  return props.game.current_night_role || 'waiting'
 })
 
 const isMyTurn = computed(() => props.currentPlayer.is_alive && props.currentPlayer.role === currentActiveRole.value)
@@ -82,99 +73,222 @@ const showActionUI = computed(() => canAct.value && isMyTurn.value && !hasActed.
 const config = computed(() => roleConfig[currentActiveRole.value])
 
 const waitMessage = computed(() => {
-  if (!props.currentPlayer.is_alive) return { icon: '💀', title: 'Éliminé', subtitle: 'Tu observes en silence...' }
-  if (props.currentPlayer.role === 'villager') return { icon: '😴', title: 'Le village dort', subtitle: 'Tu te reposes paisiblement.' }
-  if (props.currentPlayer.role === 'hunter') return { icon: '🏹', title: 'Chasseur', subtitle: 'Pas d\'action de nuit.' }
-  if (hasActed.value) return { icon: '✓', title: 'Action effectuée', subtitle: 'Attends les autres...' }
-  return { icon: '⏳', title: 'Patiente...', subtitle: 'Ce n\'est pas encore ton tour.' }
+  if (!props.currentPlayer.is_alive) return { icon: '💀', title: 'Éliminé', subtitle: 'Tu observes depuis l\'au-delà...' }
+  if (props.currentPlayer.role === 'villager') return { icon: '😴', title: 'Tu dors', subtitle: 'Le village se repose...' }
+  if (props.currentPlayer.role === 'hunter') return { icon: '🏹', title: 'Chasseur', subtitle: 'Pas d\'action de nuit' }
+  if (hasActed.value) return { icon: '✓', title: 'Action faite', subtitle: 'Attends les autres...' }
+  return { icon: '⏳', title: 'Patiente', subtitle: 'Ce n\'est pas ton tour' }
 })
+
+/* --- Watchers --- */
+// Reset state when day_number changes (new night)
+watch(() => props.game.day_number, () => {
+  hasActed.value = false
+  seerResult.value = null
+  lastNarratedRole.value = null
+})
+
+// Narrate when role changes
+watch(currentActiveRole, (newRole) => {
+  if (newRole === lastNarratedRole.value) return
+  lastNarratedRole.value = newRole
+
+  switch (newRole) {
+    case 'seer':
+      narrate.seerWake()
+      break
+    case 'werewolf':
+      narrate.werewolvesWake()
+      break
+    case 'witch':
+      narrate.witchWake()
+      break
+  }
+}, { immediate: true })
 
 /* --- Methods --- */
 function onActionDone() {
   hasActed.value = true
-  setTimeout(fetchNightActions, 500)
 }
 
 function onSeerResult(result: { name: string; role: string; emoji: string }) {
   seerResult.value = result
   hasActed.value = true
-  setTimeout(fetchNightActions, 500)
 }
 </script>
 
 <template>
-  <div
-    class="rounded-2xl border backdrop-blur-sm overflow-hidden transition-all duration-500"
-    :class="[config.bg, config.border]"
-  >
-    <!-- Header -->
-    <div class="p-4 border-b border-white/10">
-      <div class="flex items-center gap-3">
-        <div
-          class="w-12 h-12 rounded-full flex items-center justify-center text-2xl shrink-0"
-          :class="[config.bg, showActionUI ? 'animate-pulse' : 'animate-float']"
+  <div class="flex-1 flex flex-col relative min-h-0 overflow-visible">
+    <!-- Background particles -->
+    <GamePhaseParticles phase="night" :intensity="showActionUI ? 'high' : 'medium'" />
+
+    <!-- Radial glow based on active role -->
+    <div
+      class="absolute inset-0 bg-gradient-radial pointer-events-none transition-all duration-1000"
+      :class="{
+        'from-red-500/20 via-transparent to-transparent': config.color === 'red',
+        'from-violet-500/20 via-transparent to-transparent': config.color === 'violet',
+        'from-emerald-500/20 via-transparent to-transparent': config.color === 'emerald'
+      }"
+    />
+
+    <!-- Icon glow (radial gradient, no blur needed) -->
+    <Teleport v-if="showActionUI" to="body">
+      <div
+        class="fixed inset-0 pointer-events-none -z-10 transition-opacity duration-500"
+        :style="{
+          background: config.color === 'red'
+            ? 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(239, 68, 68, 0.5) 0%, transparent 70%)'
+            : config.color === 'violet'
+              ? 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(139, 92, 246, 0.5) 0%, transparent 70%)'
+              : 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(16, 185, 129, 0.5) 0%, transparent 70%)'
+        }"
+      />
+    </Teleport>
+
+    <!-- Main Content -->
+    <div class="relative z-10 flex-1 flex flex-col justify-center overflow-visible">
+      <!-- Header: Active Role Info -->
+      <div class="text-center pb-4 px-4 animate-fade-up">
+        <!-- Role Icon -->
+        <div class="inline-block mb-4">
+          <div
+            class="text-7xl sm:text-8xl transition-transform duration-500"
+            :class="showActionUI ? 'animate-float' : 'opacity-60'"
+          >
+            {{ config.icon }}
+          </div>
+        </div>
+
+        <!-- Role Label -->
+        <h1
+          class="text-3xl sm:text-4xl font-black tracking-tight mb-2 transition-colors duration-500"
+          :class="{
+            'text-red-400': config.color === 'red',
+            'text-violet-400': config.color === 'violet',
+            'text-emerald-400': config.color === 'emerald'
+          }"
         >
-          {{ config.icon }}
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="font-bold" :class="config.text">{{ config.label }}</p>
-          <p class="text-neutral-500 text-sm">{{ config.action }}</p>
-        </div>
+          {{ config.label }}
+        </h1>
+
+        <!-- Action Description -->
+        <p class="text-lg sm:text-xl text-white/60">
+          {{ config.action }}
+        </p>
+
+        <!-- "Your turn" badge -->
         <div
           v-if="showActionUI"
-          class="px-2 py-1 rounded-full text-xs font-semibold animate-pulse"
-          :class="[config.bg, config.text]"
+          class="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-full animate-pulse"
+          :class="{
+            'bg-red-500/20 text-red-300': config.color === 'red',
+            'bg-violet-500/20 text-violet-300': config.color === 'violet',
+            'bg-emerald-500/20 text-emerald-300': config.color === 'emerald'
+          }"
         >
-          Ton tour
+          <span class="w-2 h-2 rounded-full bg-current animate-ping" />
+          <span class="font-semibold">C'est ton tour</span>
         </div>
       </div>
-    </div>
 
-    <!-- Content -->
-    <div class="p-4">
-      <!-- Action UI -->
-      <template v-if="showActionUI">
-        <ActionsWerewolfAction
-          v-if="currentPlayer.role === 'werewolf'"
-          :game="game"
-          :current-player="currentPlayer"
-          :targets="targets"
-          :other-werewolves="otherWerewolves"
-          @action-done="onActionDone"
-        />
-        <ActionsSeerAction
-          v-else-if="currentPlayer.role === 'seer'"
-          :game="game"
-          :current-player="currentPlayer"
-          :targets="targets"
-          @action-done="onSeerResult"
-        />
-        <ActionsWitchAction
-          v-else-if="currentPlayer.role === 'witch'"
-          :game="game"
-          :current-player="currentPlayer"
-          :targets="targets"
-          @action-done="onActionDone"
-        />
-      </template>
+      <!-- Action Zone -->
+      <div class="px-4 pb-6">
+        <!-- Werewolf Action -->
+        <template v-if="showActionUI && currentPlayer.role === 'werewolf'">
+          <!-- Pack info -->
+          <div v-if="otherWerewolves.length > 0" class="mb-4 text-center animate-fade-up">
+            <p class="text-sm text-red-400/70 mb-2">Ta meute</p>
+            <div class="flex flex-wrap justify-center gap-2">
+              <span
+                v-for="wolf in otherWerewolves"
+                :key="wolf.id"
+                class="px-3 py-1 rounded-full bg-red-900/40 text-red-300 text-sm font-medium"
+              >
+                🐺 {{ wolf.name }}
+              </span>
+            </div>
+          </div>
 
-      <!-- Seer result -->
-      <template v-else-if="hasActed && seerResult">
-        <div class="text-center py-4">
-          <div class="text-5xl mb-3">{{ seerResult.emoji }}</div>
-          <p class="text-white font-semibold text-lg">{{ seerResult.name }}</p>
-          <p class="text-violet-400">{{ seerResult.role }}</p>
-        </div>
-      </template>
+          <ActionsWerewolfAction
+            :game="game"
+            :current-player="currentPlayer"
+            :targets="targets"
+            :other-werewolves="otherWerewolves"
+            @action-done="onActionDone"
+          />
+        </template>
 
-      <!-- Wait view -->
-      <template v-else>
-        <div class="text-center py-6">
-          <div class="text-4xl mb-2 opacity-70">{{ waitMessage.icon }}</div>
-          <p class="text-neutral-300 font-medium">{{ waitMessage.title }}</p>
-          <p class="text-neutral-500 text-sm">{{ waitMessage.subtitle }}</p>
-        </div>
-      </template>
+        <!-- Seer Action -->
+        <template v-else-if="showActionUI && currentPlayer.role === 'seer'">
+          <ActionsSeerAction
+            :game="game"
+            :current-player="currentPlayer"
+            :targets="targets"
+            @action-done="onSeerResult"
+          />
+        </template>
+
+        <!-- Witch Action -->
+        <template v-else-if="showActionUI && currentPlayer.role === 'witch'">
+          <ActionsWitchAction
+            :game="game"
+            :current-player="currentPlayer"
+            :targets="targets"
+            @action-done="onActionDone"
+          />
+        </template>
+
+        <!-- Seer Result Display -->
+        <template v-else-if="hasActed && seerResult">
+          <div class="relative flex-1 flex flex-col items-center justify-center py-8 animate-scale-in">
+            <!-- Seer result glow (absolute, centered) -->
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 blur-3xl opacity-30 bg-violet-500 rounded-full pointer-events-none" />
+
+            <div class="relative text-center">
+              <!-- Revealed role icon -->
+              <div class="mb-6">
+                <div class="text-8xl animate-icon-bounce">{{ seerResult.emoji }}</div>
+              </div>
+
+              <!-- Player name -->
+              <p class="text-2xl font-bold text-white mb-2">{{ seerResult.name }}</p>
+
+              <!-- Role name -->
+              <p class="text-xl text-violet-400">{{ seerResult.role }}</p>
+
+              <!-- Divider -->
+              <div class="w-24 h-0.5 bg-gradient-to-r from-transparent via-violet-500/50 to-transparent mx-auto my-6" />
+
+              <!-- Hint -->
+              <p class="text-sm text-white/40">Information révélée par les esprits</p>
+            </div>
+          </div>
+        </template>
+
+        <!-- Waiting State -->
+        <template v-else>
+          <div class="flex-1 flex flex-col items-center justify-center py-12 animate-fade-up">
+            <div class="text-center">
+              <!-- Wait icon -->
+              <div class="text-6xl mb-6 opacity-50">{{ waitMessage.icon }}</div>
+
+              <!-- Title -->
+              <p class="text-2xl font-bold text-white/70 mb-2">{{ waitMessage.title }}</p>
+
+              <!-- Subtitle -->
+              <p class="text-lg text-white/40">{{ waitMessage.subtitle }}</p>
+
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.bg-gradient-radial {
+  background: radial-gradient(ellipse at top, var(--tw-gradient-stops));
+}
+</style>

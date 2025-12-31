@@ -1,20 +1,23 @@
+/**
+ * Start Night API - Transition from intro to night phase
+ * Thin handler - business logic in game/lobby.ts
+ */
+
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '../../../shared/types/database.types'
-import { getPhaseEndTime, getDefaultSettings } from '../../game'
+import { startNight } from '../../game'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const { gameId } = body
 
   if (!gameId) {
-    throw createError({
-      statusCode: 400,
-      message: 'gameId requis'
-    })
+    throw createError({ statusCode: 400, message: 'gameId requis' })
   }
 
   const client = await serverSupabaseClient<Database>(event)
 
+  // Get game
   const { data: game, error: gameError } = await client
     .from('games')
     .select('*')
@@ -22,32 +25,14 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (gameError || !game) {
-    throw createError({
-      statusCode: 404,
-      message: 'Partie introuvable'
-    })
+    throw createError({ statusCode: 404, message: 'Partie introuvable' })
   }
 
-  // Only allow transition from intro phase
-  if (game.status !== 'intro') {
-    return { success: true, alreadyStarted: true }
+  const result = await startNight(client, game)
+
+  if (!result.success) {
+    throw createError({ statusCode: 400, message: result.error })
   }
 
-  // Start the actual night phase with timer
-  const settings = (game.settings as unknown as ReturnType<typeof getDefaultSettings>) || getDefaultSettings()
-  const phaseEndAt = getPhaseEndTime(settings, 'night')
-
-  await client.from('games').update({
-    status: 'night',
-    phase_end_at: phaseEndAt.toISOString()
-  }).eq('id', gameId)
-
-  await client.from('game_events').insert({
-    game_id: gameId,
-    event_type: 'night_start',
-    message: 'Nuit 1 - Les créatures de la nuit s\'éveillent...',
-    data: { day_number: 1 }
-  })
-
-  return { success: true }
+  return { success: true, alreadyStarted: result.alreadyStarted }
 })

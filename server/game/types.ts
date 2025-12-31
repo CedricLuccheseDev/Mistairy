@@ -9,6 +9,7 @@ export type GameEvent = Database['public']['Tables']['game_events']['Row']
 export type GameStatus = Game['status']
 export type Role = NonNullable<Player['role']>
 export type ActionType = NightAction['action_type']
+export type NightRole = NonNullable<Game['current_night_role']>
 
 export interface GameContext {
   game: Game

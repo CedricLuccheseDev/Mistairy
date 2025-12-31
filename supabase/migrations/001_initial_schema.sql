@@ -17,7 +17,8 @@ CREATE TABLE games (
   settings JSONB NOT NULL DEFAULT '{"discussion_time": 180, "vote_time": 60, "night_time": 30}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   host_id UUID,
-  hunter_target_pending UUID
+  hunter_target_pending UUID,
+  current_night_role VARCHAR(20) CHECK (current_night_role IN ('seer', 'werewolf', 'witch'))
 );
 
 -- Players table
@@ -43,7 +44,7 @@ CREATE TABLE night_actions (
   game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   day_number INTEGER NOT NULL,
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('werewolf_vote', 'seer_look', 'witch_heal', 'witch_kill', 'witch_skip', 'hunter_kill')),
+  action_type VARCHAR(20) NOT NULL CHECK (action_type IN ('werewolf_kill', 'werewolf_skip', 'seer_view', 'seer_skip', 'witch_save', 'witch_kill', 'witch_skip', 'hunter_kill', 'hunter_skip')),
   target_id UUID REFERENCES players(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(game_id, day_number, player_id, action_type)
@@ -137,6 +138,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE games;
 ALTER PUBLICATION supabase_realtime ADD TABLE players;
 ALTER PUBLICATION supabase_realtime ADD TABLE game_events;
 ALTER PUBLICATION supabase_realtime ADD TABLE day_ready;
+ALTER PUBLICATION supabase_realtime ADD TABLE night_actions;
 
 -- Set REPLICA IDENTITY FULL on players to get full row data in DELETE events
 ALTER TABLE players REPLICA IDENTITY FULL;

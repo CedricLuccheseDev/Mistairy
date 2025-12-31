@@ -199,11 +199,11 @@ async function createTestGame() {
 
       players.push({
         name: i === 1 ? 'Joueur 1 (Hôte)' : `Joueur ${i}`,
-        id: response.playerId
+        id: response.playerId as string
       })
     }
 
-    createdGame.value = { code: createResponse.code, players }
+    createdGame.value = { code: createResponse.code as string, players }
     await fetchGames()
   }
   catch (e) {
