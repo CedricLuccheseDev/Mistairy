@@ -27,7 +27,7 @@ export type Database = {
         Row: {
           id: string
           code: string
-          status: 'lobby' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
           phase_end_at: string | null
           day_number: number
           winner: 'village' | 'werewolf' | null
@@ -39,7 +39,7 @@ export type Database = {
         Insert: {
           id?: string
           code: string
-          status?: 'lobby' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status?: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
           phase_end_at?: string | null
           day_number?: number
           winner?: 'village' | 'werewolf' | null
@@ -51,7 +51,7 @@ export type Database = {
         Update: {
           id?: string
           code?: string
-          status?: 'lobby' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status?: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
           phase_end_at?: string | null
           day_number?: number
           winner?: 'village' | 'werewolf' | null
@@ -209,6 +209,45 @@ export type Database = {
           {
             foreignKeyName: "day_votes_target_id_fkey"
             columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      day_ready: {
+        Row: {
+          id: string
+          game_id: string
+          day_number: number
+          player_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          game_id: string
+          day_number: number
+          player_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          game_id?: string
+          day_number?: number
+          player_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "day_ready_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "day_ready_player_id_fkey"
+            columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
             referencedColumns: ["id"]

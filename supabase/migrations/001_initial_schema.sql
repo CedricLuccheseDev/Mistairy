@@ -1,5 +1,6 @@
 -- Drop existing tables if they exist (reset)
 DROP TABLE IF EXISTS game_events CASCADE;
+DROP TABLE IF EXISTS day_ready CASCADE;
 DROP TABLE IF EXISTS day_votes CASCADE;
 DROP TABLE IF EXISTS night_actions CASCADE;
 DROP TABLE IF EXISTS players CASCADE;
@@ -9,7 +10,7 @@ DROP TABLE IF EXISTS games CASCADE;
 CREATE TABLE games (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code VARCHAR(6) UNIQUE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'night', 'day', 'vote', 'hunter', 'finished')),
+  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'intro', 'night', 'day', 'vote', 'hunter', 'finished')),
   phase_end_at TIMESTAMPTZ,
   day_number INTEGER NOT NULL DEFAULT 0,
   winner VARCHAR(20) CHECK (winner IN ('village', 'werewolf')),
@@ -59,6 +60,16 @@ CREATE TABLE day_votes (
   UNIQUE(game_id, day_number, voter_id)
 );
 
+-- Day ready table (players ready to vote)
+CREATE TABLE day_ready (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  day_number INTEGER NOT NULL,
+  player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(game_id, day_number, player_id)
+);
+
 -- Game events table for narrator history
 CREATE TABLE game_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -73,6 +84,7 @@ CREATE TABLE game_events (
 CREATE INDEX idx_players_game_id ON players(game_id);
 CREATE INDEX idx_night_actions_game_day ON night_actions(game_id, day_number);
 CREATE INDEX idx_day_votes_game_day ON day_votes(game_id, day_number);
+CREATE INDEX idx_day_ready_game_day ON day_ready(game_id, day_number);
 CREATE INDEX idx_game_events_game_id ON game_events(game_id);
 CREATE INDEX idx_games_code ON games(code);
 
@@ -81,6 +93,7 @@ ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE night_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE day_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE day_ready ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_events ENABLE ROW LEVEL SECURITY;
 
 -- Games policies (full access)
@@ -107,6 +120,12 @@ CREATE POLICY "day_votes_insert" ON day_votes FOR INSERT WITH CHECK (true);
 CREATE POLICY "day_votes_update" ON day_votes FOR UPDATE USING (true);
 CREATE POLICY "day_votes_delete" ON day_votes FOR DELETE USING (true);
 
+-- Day ready policies (full access)
+CREATE POLICY "day_ready_select" ON day_ready FOR SELECT USING (true);
+CREATE POLICY "day_ready_insert" ON day_ready FOR INSERT WITH CHECK (true);
+CREATE POLICY "day_ready_update" ON day_ready FOR UPDATE USING (true);
+CREATE POLICY "day_ready_delete" ON day_ready FOR DELETE USING (true);
+
 -- Game events policies (full access)
 CREATE POLICY "game_events_select" ON game_events FOR SELECT USING (true);
 CREATE POLICY "game_events_insert" ON game_events FOR INSERT WITH CHECK (true);
@@ -117,6 +136,7 @@ CREATE POLICY "game_events_delete" ON game_events FOR DELETE USING (true);
 ALTER PUBLICATION supabase_realtime ADD TABLE games;
 ALTER PUBLICATION supabase_realtime ADD TABLE players;
 ALTER PUBLICATION supabase_realtime ADD TABLE game_events;
+ALTER PUBLICATION supabase_realtime ADD TABLE day_ready;
 
 -- Set REPLICA IDENTITY FULL on players to get full row data in DELETE events
 ALTER TABLE players REPLICA IDENTITY FULL;

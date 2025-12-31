@@ -9,7 +9,7 @@ type Player = Database['public']['Tables']['players']['Row']
 /* --- States --- */
 const client = useSupabaseClient<Database>()
 const games = ref<(Game & { players: Player[] })[]>([])
-const isLoading = ref(true)
+const isInitialLoad = ref(true) // Only true on first load
 const selectedGame = ref<(Game & { players: Player[] }) | null>(null)
 const isDeleting = ref<string | null>(null)
 const isDeletingAll = ref(false)
@@ -24,11 +24,10 @@ const createPlayerCount = ref(5)
 const isCreating = ref(false)
 const createError = ref('')
 const createdGame = ref<{ code: string; players: { name: string; id: string }[] } | null>(null)
+const autoOpenWindows = ref(false)
 
 /* --- Methods --- */
 async function fetchGames() {
-  isLoading.value = true
-
   const { data: gamesData } = await client
     .from('games')
     .select('*')
@@ -49,7 +48,7 @@ async function fetchGames() {
     games.value = gamesWithPlayers
   }
 
-  isLoading.value = false
+  isInitialLoad.value = false
 }
 
 async function deleteGame(gameId: string) {
@@ -160,6 +159,17 @@ function formatDate(date: string) {
   })
 }
 
+function formatTimer(phaseEndAt: string | null): string {
+  if (!phaseEndAt) return '-'
+  const end = new Date(phaseEndAt).getTime()
+  const now = Date.now()
+  const diff = Math.max(0, Math.floor((end - now) / 1000))
+  if (diff <= 0) return '0:00'
+  const minutes = Math.floor(diff / 60)
+  const seconds = diff % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 /* --- Create Game Methods --- */
 async function createTestGame() {
   if (createPlayerCount.value < 5 || createPlayerCount.value > 10) {
@@ -206,8 +216,22 @@ async function createTestGame() {
 }
 
 function openAsPlayer(code: string, playerId: string) {
-  localStorage.setItem('playerId', playerId)
-  window.open(`/game/${code}`, '_blank')
+  window.open(`/game/${code}?test&playerId=${playerId}`, '_blank')
+}
+
+function openAllTestWindows() {
+  if (!createdGame.value) return
+  const code = createdGame.value.code
+  for (const player of createdGame.value.players) {
+    window.open(`/game/${code}?test&playerId=${player.id}`, '_blank')
+  }
+}
+
+function openCreateModal() {
+  createdGame.value = null
+  createError.value = ''
+  createPlayerCount.value = 5
+  showCreateModal.value = true
 }
 
 function resetCreateModal() {
@@ -233,15 +257,26 @@ function subscribeToChanges() {
     .subscribe()
 }
 
+/* --- Timer refresh --- */
+const timerKey = ref(0)
+let timerInterval: ReturnType<typeof setInterval> | null = null
+
 /* --- Lifecycle --- */
 onMounted(() => {
   fetchGames()
   subscribeToChanges()
+  // Refresh timer display every second
+  timerInterval = setInterval(() => {
+    timerKey.value++
+  }, 1000)
 })
 
 onUnmounted(() => {
   if (channel) {
     client.removeChannel(channel)
+  }
+  if (timerInterval) {
+    clearInterval(timerInterval)
   }
 })
 </script>
@@ -267,16 +302,15 @@ onUnmounted(() => {
         <div class="flex items-center gap-2">
           <button
             class="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 transition-colors cursor-pointer"
-            @click="showCreateModal = true"
+            @click="openCreateModal"
           >
             ➕ Créer une partie
           </button>
           <button
-            class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50"
-            :disabled="isLoading"
+            class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm hover:bg-white/10 transition-colors cursor-pointer"
             @click="fetchGames"
           >
-            {{ isLoading ? '...' : '🔄' }}
+            🔄
           </button>
           <button
             v-if="games.length > 0"
@@ -291,8 +325,8 @@ onUnmounted(() => {
     </header>
 
     <div class="max-w-6xl mx-auto p-4">
-      <!-- Loading -->
-      <div v-if="isLoading" class="flex items-center justify-center py-20">
+      <!-- Loading (only on initial load) -->
+      <div v-if="isInitialLoad && games.length === 0" class="flex items-center justify-center py-20">
         <div class="text-center">
           <div class="text-5xl mb-4 animate-pulse">🐺</div>
           <p class="text-neutral-500">Chargement...</p>
@@ -305,7 +339,7 @@ onUnmounted(() => {
         <p class="text-neutral-400 mb-4">Aucune partie</p>
         <button
           class="px-6 py-3 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-500 transition-colors cursor-pointer"
-          @click="showCreateModal = true"
+          @click="openCreateModal"
         >
           ➕ Créer une partie de test
         </button>
@@ -318,6 +352,7 @@ onUnmounted(() => {
             <tr class="border-b border-white/10 text-left text-sm text-neutral-400">
               <th class="px-4 py-3 font-medium">Code</th>
               <th class="px-4 py-3 font-medium">Status</th>
+              <th class="px-4 py-3 font-medium">Timer</th>
               <th class="px-4 py-3 font-medium">Joueurs</th>
               <th class="px-4 py-3 font-medium">Jour</th>
               <th class="px-4 py-3 font-medium">Créé</th>
@@ -341,6 +376,15 @@ onUnmounted(() => {
                 >
                   {{ game.status }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <span
+                  v-if="game.phase_end_at && game.status !== 'lobby' && game.status !== 'finished'"
+                  class="font-mono text-amber-400"
+                >
+                  {{ timerKey >= 0 ? formatTimer(game.phase_end_at) : '' }}
+                </span>
+                <span v-else class="text-neutral-600">-</span>
               </td>
               <td class="px-4 py-3 text-neutral-300">
                 {{ game.players.length }}/{{ (game.settings as any)?.max_players || 18 }}
@@ -392,7 +436,7 @@ onUnmounted(() => {
             <p class="text-neutral-400 text-sm mb-6">Génère plusieurs joueurs automatiquement</p>
 
             <!-- Player count -->
-            <div class="mb-6">
+            <div class="mb-4">
               <label class="block text-sm text-neutral-400 mb-3">Nombre de joueurs</label>
               <div class="flex items-center gap-2">
                 <button
@@ -407,6 +451,21 @@ onUnmounted(() => {
                   {{ count }}
                 </button>
               </div>
+            </div>
+
+            <!-- Auto-open windows option -->
+            <div class="mb-6">
+              <label class="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                <input
+                  v-model="autoOpenWindows"
+                  type="checkbox"
+                  class="w-5 h-5 rounded accent-violet-500"
+                >
+                <div>
+                  <p class="text-white font-medium">Mode test automatique</p>
+                  <p class="text-neutral-500 text-sm">Ouvre {{ createPlayerCount }} onglets pour chaque joueur</p>
+                </div>
+              </label>
             </div>
 
             <!-- Error -->
@@ -460,6 +519,19 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- Open all windows button -->
+            <div class="mb-4">
+              <button
+                class="w-full px-4 py-3 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-500 transition-colors cursor-pointer"
+                @click="openAllTestWindows"
+              >
+                Ouvrir tous les onglets ({{ createdGame.players.length }})
+              </button>
+              <p class="text-xs text-neutral-500 text-center mt-2">
+                Si un seul onglet s'ouvre, autorisez les popups pour ce site
+              </p>
+            </div>
+
             <button
               class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-neutral-400 font-medium hover:bg-white/10 transition-colors cursor-pointer"
               @click="resetCreateModal"
@@ -492,10 +564,16 @@ onUnmounted(() => {
           </div>
 
           <!-- Stats -->
-          <div class="grid grid-cols-4 gap-4 mb-6">
+          <div class="grid grid-cols-5 gap-4 mb-6">
             <div class="p-4 rounded-xl bg-white/5 text-center">
               <p class="text-2xl font-bold text-white">{{ selectedGame.day_number }}</p>
               <p class="text-xs text-neutral-500">Jour</p>
+            </div>
+            <div class="p-4 rounded-xl bg-amber-500/10 text-center">
+              <p class="text-2xl font-bold font-mono text-amber-400">
+                {{ timerKey >= 0 ? formatTimer(selectedGame.phase_end_at) : '-' }}
+              </p>
+              <p class="text-xs text-neutral-500">Timer</p>
             </div>
             <div class="p-4 rounded-xl bg-white/5 text-center">
               <p class="text-2xl font-bold text-white">{{ selectedGame.players.length }}</p>

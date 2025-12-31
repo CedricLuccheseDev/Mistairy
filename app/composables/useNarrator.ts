@@ -7,6 +7,7 @@ interface NarrationData {
   dayNumber?: number
   playerCount?: number
   aliveCount?: number
+  playerNames?: string[]
 }
 
 interface BatchContext {

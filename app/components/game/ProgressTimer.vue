@@ -25,6 +25,12 @@ const formattedTime = computed(() => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 })
 
+const formattedTotalTime = computed(() => {
+  const minutes = Math.floor(totalTime.value / 60)
+  const seconds = totalTime.value % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+})
+
 const isUrgent = computed(() => timeLeft.value <= 10 && timeLeft.value > 0)
 const isCritical = computed(() => timeLeft.value <= 3 && timeLeft.value > 0)
 
@@ -131,7 +137,7 @@ watch(() => props.totalDuration, () => {
             isUrgent && !isCritical && 'text-orange-100'
           ]"
         >
-          {{ formattedTime }}
+          {{ formattedTime }} <span class="text-white/50 font-normal">/ {{ formattedTotalTime }}</span>
         </span>
       </div>
     </div>

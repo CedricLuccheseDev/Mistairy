@@ -35,8 +35,7 @@ async function selectAndVote(player: Player) {
       method: 'POST',
       body: {
         gameId: props.game.id,
-        voterId: props.currentPlayer.id,
-        playerToken: localStorage.getItem('playerToken'),
+        playerId: props.currentPlayer.id,
         targetId: player.id
       }
     })

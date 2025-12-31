@@ -10,7 +10,20 @@ const { game, players, currentPlayer, events, isLoading, error, isHost, canStart
 const narrator = useNarrator()
 const supabase = useSupabaseClient()
 const { isTestMode, setPlayerId, removePlayerId, getPlayerId } = usePlayerStorage()
-const { initForHost } = useSoundSettings()
+const { settings: soundSettings, muteAll, unmuteAll, initForHost } = useSoundSettings()
+
+const isMuted = computed(() =>
+  !soundSettings.value.voiceEnabled && !soundSettings.value.ambientEnabled && !soundSettings.value.effectsEnabled
+)
+
+function toggleMute() {
+  if (isMuted.value) {
+    unmuteAll()
+  }
+  else {
+    muteAll()
+  }
+}
 
 /* --- UI State --- */
 const isStarting = ref(false)
@@ -18,9 +31,6 @@ const showRoleModal = ref(false)
 const showPlayersModal = ref(false)
 const showEventsModal = ref(false)
 const showConfigModal = ref(false)
-const showSoundModal = ref(false)
-const showPreamble = ref(false)
-const preambleText = ref('')
 const joinName = ref('')
 const isJoining = ref(false)
 const joinError = ref('')
@@ -39,6 +49,7 @@ const roleInfo = computed(() => {
 const phaseClass = computed(() => {
   if (!game.value) return ''
   switch (game.value.status) {
+    case 'intro':
     case 'night': return 'bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950'
     case 'day': return 'bg-gradient-to-b from-amber-950/50 via-slate-950 to-slate-950'
     case 'vote': return 'bg-gradient-to-b from-orange-950/50 via-slate-950 to-slate-950'
@@ -77,9 +88,12 @@ const maxPlayers = computed(() => {
 })
 
 /* --- Methods --- */
+const startError = ref<string | null>(null)
+
 async function startGame() {
   if (!canStartGame.value) return
   isStarting.value = true
+  startError.value = null
   try {
     await $fetch('/api/game/start', {
       method: 'POST',
@@ -87,8 +101,11 @@ async function startGame() {
     })
     await refetch()
   }
-  catch (e) {
-    console.error('Failed to start game:', e)
+  catch (e: unknown) {
+    const fetchError = e as { data?: { message?: string }, message?: string }
+    const errorMessage = fetchError.data?.message || fetchError.message || 'Erreur lors du lancement'
+    startError.value = errorMessage
+    console.error('Failed to start game:', errorMessage, e)
   }
   finally {
     isStarting.value = false
@@ -223,35 +240,151 @@ onMounted(async () => {
 /* --- Watchers --- */
 const lastNarratedPhase = ref<string | null>(null)
 
+const narrationPhase = ref<'intro' | 'night' | 'day' | 'vote' | null>(null)
+const narrationText = ref('')
+
 async function playPreamble() {
   if (!game.value) return
 
-  showPreamble.value = true
-  const playerNames = players.value.map(p => p.name)
+  narrationPhase.value = 'intro'
 
-  // Generate introduction text
-  const introText = `Bienvenue dans ce village paisible... ${playerNames.length} âmes s'apprêtent à vivre une nuit de terreur. Parmi vous se cachent des loups-garous. Découvrez votre rôle et survivez jusqu'à l'aube.`
+  // First get the narration text from AI (without speaking)
+  let narration = ''
+  try {
+    const response = await $fetch<{ narration: string }>('/api/narration/generate', {
+      method: 'POST',
+      body: {
+        context: 'night_start',
+        data: {
+          dayNumber: 1,
+          playerCount: players.value.length,
+          playerNames: players.value.map(p => p.name)
+        }
+      }
+    })
+    narration = response.narration || `Bienvenue dans ce village paisible... ${players.value.length} âmes s'apprêtent à vivre une nuit de terreur.`
+  }
+  catch {
+    narration = `Bienvenue dans ce village paisible... ${players.value.length} âmes s'apprêtent à vivre une nuit de terreur.`
+  }
 
-  preambleText.value = introText
+  // Show the text on screen immediately
+  narrationText.value = narration
 
-  // Speak the introduction
-  await narrator.speak(introText, { rate: 0.8, pitch: 0.9 })
+  // Now speak and WAIT for the voice to finish
+  await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
 
-  // Wait a moment then show role (only if not skipped)
-  if (showPreamble.value) {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    showPreamble.value = false
+  // Small pause after voice ends before moving on
+  await new Promise(resolve => setTimeout(resolve, 1500))
+
+  // Close narration overlay if not skipped
+  if (narrationPhase.value === 'intro') {
+    narrationPhase.value = null
     showRoleModal.value = true
-
-    // Then narrate night start
-    await narrator.narrate.nightStart(game.value.day_number)
   }
 }
 
-function skipPreamble() {
+async function playNightNarration() {
+  if (!game.value) return
+
+  narrationPhase.value = 'night'
+
+  // Get narration text
+  let narration = ''
+  try {
+    const response = await $fetch<{ narration: string }>('/api/narration/generate', {
+      method: 'POST',
+      body: {
+        context: 'night_start',
+        data: { dayNumber: game.value.day_number, aliveCount: alivePlayers.value.length }
+      }
+    })
+    narration = response.narration || `Nuit ${game.value.day_number}. Le village s'endort...`
+  }
+  catch {
+    narration = `Nuit ${game.value.day_number}. Le village s'endort...`
+  }
+
+  // Show text and speak
+  narrationText.value = narration
+  await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
+  if (narrationPhase.value === 'night') {
+    narrationPhase.value = null
+  }
+}
+
+async function playDayNarration() {
+  if (!game.value) return
+
+  narrationPhase.value = 'day'
+
+  // Get narration text
+  let narration = ''
+  try {
+    const response = await $fetch<{ narration: string }>('/api/narration/generate', {
+      method: 'POST',
+      body: {
+        context: 'day_start',
+        data: { dayNumber: game.value.day_number, aliveCount: alivePlayers.value.length }
+      }
+    })
+    narration = response.narration || `Le soleil se lève sur le village...`
+  }
+  catch {
+    narration = `Le soleil se lève sur le village...`
+  }
+
+  // Show text and speak
+  narrationText.value = narration
+  await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
+  if (narrationPhase.value === 'day') {
+    narrationPhase.value = null
+  }
+}
+
+async function playVoteNarration() {
+  if (!game.value) return
+
+  narrationPhase.value = 'vote'
+
+  // Get narration text
+  let narration = ''
+  try {
+    const response = await $fetch<{ narration: string }>('/api/narration/generate', {
+      method: 'POST',
+      body: {
+        context: 'vote_start',
+        data: { dayNumber: game.value.day_number, aliveCount: alivePlayers.value.length }
+      }
+    })
+    narration = response.narration || `L'heure du jugement a sonné...`
+  }
+  catch {
+    narration = `L'heure du jugement a sonné...`
+  }
+
+  // Show text and speak
+  narrationText.value = narration
+  await narrator.speak(narration, { rate: 0.85, voiceType: 'story' })
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
+  if (narrationPhase.value === 'vote') {
+    narrationPhase.value = null
+  }
+}
+
+function skipNarration() {
+  const wasIntro = narrationPhase.value === 'intro'
   narrator.stop()
-  showPreamble.value = false
-  showRoleModal.value = true
+  narrationPhase.value = null
+  // If it was intro, show role modal
+  if (wasIntro) {
+    showRoleModal.value = true
+  }
 }
 
 watch(() => game.value?.status, async (newStatus, oldStatus) => {
@@ -266,8 +399,9 @@ watch(() => game.value?.status, async (newStatus, oldStatus) => {
   const settings = game.value.settings as { narration_enabled?: boolean }
   const narrationEnabled = settings.narration_enabled !== false
 
-  // Handle phase transitions with AI narration and ambient sounds
-  if (oldStatus === 'lobby' && newStatus === 'night') {
+  // Handle phase transitions with narration and ambient sounds
+  if (newStatus === 'intro') {
+    // Intro phase - play preamble narration then transition to night
     narrator.ambient.startNight()
     if (narrationEnabled) {
       await playPreamble()
@@ -275,18 +409,43 @@ watch(() => game.value?.status, async (newStatus, oldStatus) => {
     else {
       showRoleModal.value = true
     }
+    // Only host triggers the transition to night phase
+    if (isHost.value && game.value?.id) {
+      try {
+        await $fetch('/api/game/start-night', {
+          method: 'POST',
+          body: { gameId: game.value.id }
+        })
+      }
+      catch (e) {
+        console.error('Failed to start night phase:', e)
+      }
+    }
   }
-  else if (newStatus === 'night' && oldStatus !== 'lobby') {
-    narrator.ambient.startNight()
-    if (narrationEnabled) await narrator.narrate.nightStart(game.value.day_number)
+  else if (newStatus === 'night') {
+    // Show role modal when entering night (for non-host players coming from intro)
+    if (oldStatus === 'intro' && !showRoleModal.value) {
+      showRoleModal.value = true
+    }
+    // Subsequent nights (from vote or hunter)
+    if (oldStatus === 'vote' || oldStatus === 'hunter') {
+      narrator.ambient.startNight()
+      if (narrationEnabled) {
+        await playNightNarration()
+      }
+    }
   }
   else if (newStatus === 'day') {
     narrator.ambient.startDay()
-    if (narrationEnabled) await narrator.narrate.dayStart(game.value.day_number, alivePlayers.value.length)
+    if (narrationEnabled) {
+      await playDayNarration()
+    }
   }
   else if (newStatus === 'vote') {
     narrator.ambient.startVote()
-    if (narrationEnabled) await narrator.narrate.voteStart()
+    if (narrationEnabled) {
+      await playVoteNarration()
+    }
   }
   else if (newStatus === 'hunter') {
     const hunterPlayer = players.value.find(p => p.id === game.value?.hunter_target_pending)
@@ -669,10 +828,10 @@ onUnmounted(() => {
             🐺
           </NuxtLink>
 
-          <!-- Timer (hidden during preamble narration) -->
+          <!-- Timer (hidden during intro/narration) -->
           <div class="flex-1">
             <GameProgressTimer
-              v-if="game.status !== 'lobby' && game.status !== 'finished' && !showPreamble"
+              v-if="game.status !== 'lobby' && game.status !== 'intro' && game.status !== 'finished' && !narrationPhase && game.phase_end_at"
               :end-at="game.phase_end_at"
               :total-duration="phaseDuration"
               :phase-color="timerColor"
@@ -689,11 +848,12 @@ onUnmounted(() => {
               <span class="text-sm text-neutral-300">{{ alivePlayers.length }}/{{ players.length }}</span>
             </button>
             <button
-              class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center"
-              title="Réglages audio"
-              @click="showSoundModal = true"
+              class="w-10 h-10 rounded-xl border transition-colors cursor-pointer flex items-center justify-center"
+              :class="isMuted ? 'bg-red-500/20 border-red-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'"
+              :title="isMuted ? 'Activer le son' : 'Couper le son'"
+              @click="toggleMute"
             >
-              <span class="text-lg">🔊</span>
+              <span class="text-lg">{{ isMuted ? '🔇' : '🔊' }}</span>
             </button>
             <button
               class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
@@ -811,6 +971,9 @@ onUnmounted(() => {
                 <p v-if="!canStartGame" class="text-center text-neutral-500 text-xs mt-2">
                   Il faut au moins 5 joueurs pour commencer
                 </p>
+                <div v-if="startError" class="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                  <p class="text-red-400 text-sm text-center">{{ startError }}</p>
+                </div>
               </div>
 
               <!-- Waiting message for non-host -->
@@ -912,35 +1075,85 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Preamble Overlay (fullscreen intro narration) -->
+      <!-- Narration Overlay (fullscreen phase narration) -->
       <Transition name="fade">
         <div
-          v-if="showPreamble"
-          class="fixed inset-0 z-50 bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950 flex flex-col items-center justify-center p-6"
+          v-if="narrationPhase"
+          class="fixed inset-0 z-50 flex flex-col items-center justify-center p-6"
+          :class="{
+            'bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950': narrationPhase === 'intro' || narrationPhase === 'night',
+            'bg-gradient-to-b from-amber-950/80 via-slate-950 to-slate-950': narrationPhase === 'day',
+            'bg-gradient-to-b from-orange-950/80 via-slate-950 to-slate-950': narrationPhase === 'vote'
+          }"
         >
           <div class="text-center max-w-md animate-fade-up">
-            <!-- Moon animation -->
+            <!-- Phase icon -->
             <div class="relative mb-8">
-              <div class="text-8xl animate-float filter drop-shadow-2xl">🌙</div>
-              <div class="absolute -inset-8 bg-indigo-500/20 blur-3xl rounded-full -z-10 animate-pulse" />
+              <div class="text-8xl animate-float filter drop-shadow-2xl">
+                {{ narrationPhase === 'intro' || narrationPhase === 'night' ? '🌙' : narrationPhase === 'day' ? '☀️' : '⚖️' }}
+              </div>
+              <div
+                class="absolute -inset-8 blur-3xl rounded-full -z-10 animate-pulse"
+                :class="{
+                  'bg-indigo-500/20': narrationPhase === 'intro' || narrationPhase === 'night',
+                  'bg-amber-500/20': narrationPhase === 'day',
+                  'bg-orange-500/20': narrationPhase === 'vote'
+                }"
+              />
             </div>
 
             <!-- Title -->
-            <h2 class="text-2xl font-bold text-white mb-6">La nuit tombe...</h2>
+            <h2 class="text-2xl font-bold text-white mb-6">
+              {{ narrationPhase === 'intro' ? 'La nuit tombe...' :
+                 narrationPhase === 'night' ? 'La nuit s\'éveille...' :
+                 narrationPhase === 'day' ? 'Le jour se lève...' :
+                 'L\'heure du vote...' }}
+            </h2>
 
             <!-- Narration text -->
             <div class="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm mb-8">
               <p class="text-neutral-300 leading-relaxed italic">
-                "{{ preambleText }}"
+                "{{ narrationText }}"
               </p>
             </div>
 
             <!-- Speaking indicator -->
-            <div class="flex items-center justify-center gap-3 text-indigo-400">
+            <div
+              class="flex items-center justify-center gap-3"
+              :class="{
+                'text-indigo-400': narrationPhase === 'intro' || narrationPhase === 'night',
+                'text-amber-400': narrationPhase === 'day',
+                'text-orange-400': narrationPhase === 'vote'
+              }"
+            >
               <div class="flex gap-1">
-                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0s" />
-                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.1s" />
-                <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.2s" />
+                <span
+                  class="w-2 h-2 rounded-full animate-bounce"
+                  :class="{
+                    'bg-indigo-400': narrationPhase === 'intro' || narrationPhase === 'night',
+                    'bg-amber-400': narrationPhase === 'day',
+                    'bg-orange-400': narrationPhase === 'vote'
+                  }"
+                  style="animation-delay: 0s"
+                />
+                <span
+                  class="w-2 h-2 rounded-full animate-bounce"
+                  :class="{
+                    'bg-indigo-400': narrationPhase === 'intro' || narrationPhase === 'night',
+                    'bg-amber-400': narrationPhase === 'day',
+                    'bg-orange-400': narrationPhase === 'vote'
+                  }"
+                  style="animation-delay: 0.1s"
+                />
+                <span
+                  class="w-2 h-2 rounded-full animate-bounce"
+                  :class="{
+                    'bg-indigo-400': narrationPhase === 'intro' || narrationPhase === 'night',
+                    'bg-amber-400': narrationPhase === 'day',
+                    'bg-orange-400': narrationPhase === 'vote'
+                  }"
+                  style="animation-delay: 0.2s"
+                />
               </div>
               <span class="text-sm">Le narrateur parle...</span>
             </div>
@@ -949,9 +1162,9 @@ onUnmounted(() => {
             <button
               v-if="isHost"
               class="mt-6 px-6 py-3 rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 transition-colors"
-              @click="skipPreamble"
+              @click="skipNarration"
             >
-              Passer l'intro →
+              Passer →
             </button>
           </div>
         </div>
@@ -1044,14 +1257,6 @@ onUnmounted(() => {
             :current-settings="game.settings as any"
             @saved="showConfigModal = false; refetch()"
           />
-        </div>
-      </template>
-    </UModal>
-
-    <UModal v-model:open="showSoundModal">
-      <template #content>
-        <div class="p-4">
-          <GameSoundSettings @close="showSoundModal = false" />
         </div>
       </template>
     </UModal>

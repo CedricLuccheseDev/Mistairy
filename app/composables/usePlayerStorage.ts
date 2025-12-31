@@ -17,6 +17,15 @@ export function usePlayerStorage() {
   function getPlayerId(): string | null {
     const storage = getStorage()
     if (!storage) return null
+
+    // Check if playerId is in URL query (for admin test mode)
+    const urlPlayerId = route.query.playerId as string | undefined
+    if (urlPlayerId && isTestMode.value) {
+      // Store it in session storage and return it
+      storage.setItem('playerId', urlPlayerId)
+      return urlPlayerId
+    }
+
     return storage.getItem('playerId')
   }
 

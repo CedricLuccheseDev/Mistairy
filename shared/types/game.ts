@@ -1,6 +1,6 @@
 import type { GameSettings } from './database.types'
 
-export type GameStatus = 'lobby' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+export type GameStatus = 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
 
 export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter'
 
