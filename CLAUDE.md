@@ -1,13 +1,15 @@
-# Claude Code Guidelines - Loup Agrou
+# Claude Code Guidelines - Mistairy
 
 ## Project Overview
 
-Online Werewolf game designed for playing with friends IRL. Phones act as the narrator (TTS) and game interface, eliminating the need for physical cards or a human narrator.
+Mistairy is a generic social deduction game engine inspired by Werewolf. Create custom roles and game modes through configuration files. Phones act as the narrator (TTS) and game interface.
+
+> *Mystery + AI = Mistairy*
 
 ## Project Structure
 
 ```
-LoupAgrou/
+Mistairy/
 ├── app/
 │   ├── components/      # Vue components
 │   │   └── night/       # Night phase sub-components (WerewolfAction, SeerAction, etc.)

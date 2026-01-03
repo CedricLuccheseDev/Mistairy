@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
-import { ROLES } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
+import type { Role } from '#shared/types/game'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -43,8 +44,8 @@ async function selectTarget(player: Player) {
     })
 
     if ('revealedRole' in response && response.revealedRole) {
-      const revealedRole = response.revealedRole as keyof typeof ROLES
-      const roleInfo = ROLES[revealedRole]
+      const revealedRole = response.revealedRole as Role
+      const roleInfo = ROLES_CONFIG[revealedRole]
 
       toast.add({ title: `${roleInfo.emoji} ${player.name} est ${roleInfo.name}`, color: 'info' })
 

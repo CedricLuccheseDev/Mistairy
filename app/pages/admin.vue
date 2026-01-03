@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { Database } from '#shared/types/database.types'
-import { ROLES } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -619,7 +619,7 @@ onUnmounted(() => {
               >
                 <div class="flex items-center gap-3">
                   <span v-if="player.role" class="text-xl">
-                    {{ ROLES[player.role]?.emoji || '?' }}
+                    {{ ROLES_CONFIG[player.role]?.emoji || '?' }}
                   </span>
                   <div>
                     <span class="text-white" :class="{ 'line-through': !player.is_alive }">

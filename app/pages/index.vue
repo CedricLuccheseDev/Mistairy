@@ -64,7 +64,7 @@ function goToGame() {
           <div class="absolute -inset-4 bg-violet-500/20 blur-2xl rounded-full -z-10" />
         </div>
         <h1 class="text-5xl font-black text-white mt-4 tracking-tight">
-          Loup Agrou
+          Mistairy
         </h1>
         <p class="text-neutral-400 mt-2">
           Jouez sans cartes physiques

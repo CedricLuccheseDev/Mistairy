@@ -8,8 +8,8 @@ interface SoundSettings {
   effectsVolume: number
 }
 
-const STORAGE_KEY = 'loupagrou-sound-settings'
-const INITIALIZED_KEY = 'loupagrou-sound-initialized'
+const STORAGE_KEY = 'mistairy-sound-settings'
+const INITIALIZED_KEY = 'mistairy-sound-initialized'
 
 const DEFAULT_SETTINGS: SoundSettings = {
   voiceEnabled: true,

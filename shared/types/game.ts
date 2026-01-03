@@ -1,12 +1,48 @@
 import type { GameSettings } from './database.types'
 
-export type GameStatus = 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+// Game status enum
+export const GameStatus = {
+  Lobby: 'lobby',
+  Intro: 'intro',
+  Night: 'night',
+  Day: 'day',
+  Vote: 'vote',
+  Hunter: 'hunter',
+  Finished: 'finished'
+} as const
+export type GameStatus = typeof GameStatus[keyof typeof GameStatus]
 
-export type Role = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter'
+// Role enum
+export const Role = {
+  Werewolf: 'werewolf',
+  Villager: 'villager',
+  Seer: 'seer',
+  Witch: 'witch',
+  Hunter: 'hunter'
+} as const
+export type Role = typeof Role[keyof typeof Role]
 
-export type NightActionType = 'werewolf_kill' | 'werewolf_skip' | 'seer_view' | 'seer_skip' | 'witch_save' | 'witch_kill' | 'witch_skip' | 'hunter_kill' | 'hunter_skip'
+// Night action type enum
+export const NightActionType = {
+  WerewolfKill: 'werewolf_kill',
+  WerewolfSkip: 'werewolf_skip',
+  SeerView: 'seer_view',
+  SeerSkip: 'seer_skip',
+  WitchSave: 'witch_save',
+  WitchKill: 'witch_kill',
+  WitchSkip: 'witch_skip',
+  HunterKill: 'hunter_kill',
+  HunterSkip: 'hunter_skip'
+} as const
+export type NightActionType = typeof NightActionType[keyof typeof NightActionType]
 
-export type NightRole = 'seer' | 'werewolf' | 'witch'
+// Night role enum (roles that act at night)
+export const NightRole = {
+  Seer: 'seer',
+  Werewolf: 'werewolf',
+  Witch: 'witch'
+} as const
+export type NightRole = typeof NightRole[keyof typeof NightRole]
 
 export interface Game {
   id: string
@@ -63,55 +99,7 @@ export interface GameEvent {
   created_at: string
 }
 
-export interface RoleInfo {
-  role: Role
-  name: string
-  emoji: string
-  description: string
-  team: 'village' | 'werewolf'
-}
-
-export const ROLES: Record<Role, RoleInfo> = {
-  werewolf: {
-    role: 'werewolf',
-    name: 'Loup-Garou',
-    emoji: '🐺',
-    description: 'Chaque nuit, dévore un villageois avec les autres loups.',
-    team: 'werewolf'
-  },
-  villager: {
-    role: 'villager',
-    name: 'Villageois',
-    emoji: '👤',
-    description: 'Tu n\'as pas de pouvoir spécial, mais ton vote est crucial.',
-    team: 'village'
-  },
-  seer: {
-    role: 'seer',
-    name: 'Voyante',
-    emoji: '🔮',
-    description: 'Chaque nuit, tu peux découvrir le rôle d\'un joueur.',
-    team: 'village'
-  },
-  witch: {
-    role: 'witch',
-    name: 'Sorcière',
-    emoji: '🧪',
-    description: 'Tu possèdes une potion de vie et une potion de mort (usage unique).',
-    team: 'village'
-  },
-  hunter: {
-    role: 'hunter',
-    name: 'Chasseur',
-    emoji: '🏹',
-    description: 'Si tu meurs, tu peux emporter quelqu\'un avec toi.',
-    team: 'village'
-  }
-}
-
-export function getRoleInfo(role: Role): RoleInfo {
-  return ROLES[role]
-}
-
 // Re-export from centralized config
 export { MIN_PLAYERS, MAX_PLAYERS, calculateRoles } from '../config/game.config'
+export { ROLES_CONFIG, getRoleConfig } from '../config/roles.config'
+export type { RoleConfig, Team } from '../config/roles.config'

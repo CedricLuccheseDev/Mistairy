@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ROLES } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
 import type { Player } from '#shared/types/game'
 
 /* --- Props --- */
@@ -11,7 +11,7 @@ const props = defineProps<{
 /* --- Computed --- */
 const roleInfo = computed(() => {
   if (!props.player.role) return null
-  return ROLES[props.player.role]
+  return ROLES_CONFIG[props.player.role]
 })
 
 const isWerewolf = computed(() => props.player.role === 'werewolf')

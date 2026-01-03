@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { Player } from '#shared/types/game'
-import { ROLES } from '#shared/types/game'
+import type { Player, Role } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
 
 /* --- Props --- */
 defineProps<{
@@ -11,11 +11,11 @@ defineProps<{
 
 /* --- Helpers --- */
 function getRoleEmoji(role: string): string {
-  return ROLES[role as keyof typeof ROLES]?.emoji || '👤'
+  return ROLES_CONFIG[role as Role]?.emoji || '👤'
 }
 
 function getRoleColor(role: string): string {
-  const roleData = ROLES[role as keyof typeof ROLES]
+  const roleData = ROLES_CONFIG[role as Role]
   return roleData?.team === 'werewolf' ? 'red' : 'violet'
 }
 </script>
@@ -97,7 +97,7 @@ function getRoleColor(role: string): string {
                 ? 'bg-red-900/50 text-red-400'
                 : 'bg-violet-900/50 text-violet-400'"
             >
-              {{ ROLES[player.role as keyof typeof ROLES]?.name || player.role }}
+              {{ ROLES_CONFIG[player.role]?.name || player.role }}
             </span>
           </div>
         </div>
@@ -138,7 +138,7 @@ function getRoleColor(role: string): string {
                   class="text-xs"
                   :class="getRoleColor(player.role) === 'red' ? 'text-red-500/70' : 'text-violet-500/70'"
                 >
-                  {{ ROLES[player.role as keyof typeof ROLES]?.name || player.role }}
+                  {{ ROLES_CONFIG[player.role]?.name || player.role }}
                 </span>
               </div>
             </div>

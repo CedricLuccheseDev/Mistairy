@@ -1,6 +1,8 @@
-# Loup Agrou
+# Mistairy
 
-Online Werewolf game designed for playing with friends IRL. Phones act as the narrator (TTS) and game interface, eliminating the need for physical cards or a human narrator.
+A generic social deduction game engine inspired by Werewolf. Create custom roles and game modes through configuration files. Phones act as the narrator (TTS) and game interface.
+
+> *Mystery + AI = Mistairy*
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
@@ -24,7 +26,7 @@ npm run dev
 ## Project Structure
 
 ```
-LoupAgrou/
+Mistairy/
 ├── app/
 │   ├── components/     # Vue components
 │   ├── composables/    # Reusable logic (useGame, useNarrator)

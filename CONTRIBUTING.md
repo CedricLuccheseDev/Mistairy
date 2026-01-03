@@ -1,4 +1,4 @@
-# Contributing to Loup Agrou
+# Contributing to Mistairy
 
 ## Prerequisites
 
@@ -10,8 +10,8 @@
 ### 1. Clone the Repository
 
 ```bash
-git clone git@github.com:CedricLuccheseDev/LoupAgrou.git
-cd LoupAgrou
+git clone git@github.com:CedricLuccheseDev/Mistairy.git
+cd Mistairy
 ```
 
 ### 2. Set Up Supabase

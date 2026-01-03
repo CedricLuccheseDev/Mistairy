@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
-import { ROLES } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -93,7 +93,7 @@ const villagers = computed(() =>
                   {{ player.name }}
                 </span>
                 <span class="text-sm text-gray-400">
-                  {{ ROLES[player.role!]?.emoji }} {{ ROLES[player.role!]?.name }}
+                  {{ ROLES_CONFIG[player.role!]?.emoji }} {{ ROLES_CONFIG[player.role!]?.name }}
                 </span>
               </div>
               <UBadge :color="player.is_alive ? 'success' : 'neutral'">

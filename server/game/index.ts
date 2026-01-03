@@ -61,5 +61,6 @@ export type {
   StartNightResult
 } from './lobby'
 
-// Re-export role utilities from config
-export { calculateRoles, shuffleArray, ROLE_ACTIONS } from '../../shared/config/game.config'
+// Re-export utilities from config
+export { calculateRoles, shuffleArray } from '../../shared/config/game.config'
+export { isValidActionForRole, ROLES_CONFIG } from '../../shared/config/roles.config'

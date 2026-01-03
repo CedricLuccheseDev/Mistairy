@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ROLES } from '#shared/types/game'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
 import { stripSSML } from '~/composables/useNarrator'
 
 /* --- Route --- */
@@ -44,7 +44,7 @@ let createdGameId: string | null = null
 /* --- Computed --- */
 const roleInfo = computed(() => {
   if (!currentPlayer.value?.role) return null
-  return ROLES[currentPlayer.value.role]
+  return ROLES_CONFIG[currentPlayer.value.role]
 })
 
 const phaseClass = computed(() => {
@@ -117,7 +117,7 @@ function shareLink() {
   // In test mode, share the URL without the test param (for real players)
   const baseUrl = `${window.location.origin}/game/${gameCode}`
   if (navigator.share) {
-    navigator.share({ title: `Loup Agrou - ${gameCode}`, url: baseUrl })
+    navigator.share({ title: `Mistairy - ${gameCode}`, url: baseUrl })
   }
   else {
     navigator.clipboard.writeText(baseUrl)

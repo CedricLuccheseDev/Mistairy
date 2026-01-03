@@ -1,54 +1,24 @@
 <script setup lang="ts">
+import { getNightRoleUI } from '#shared/config/roles.config'
+import type { NightRole } from '#shared/types/game'
+
 /* --- Props --- */
-defineProps<{
-  currentRole: 'werewolf' | 'seer' | 'witch' | 'waiting' | null
+const props = defineProps<{
+  currentRole: NightRole | 'waiting' | null
   isMyTurn?: boolean
 }>()
 
-/* --- Config --- */
-const roleConfig = {
-  werewolf: {
-    icon: '🐺',
-    label: 'Les Loups-Garous',
-    action: 'choisissent leur victime...',
-    color: 'text-red-400',
-    bg: 'bg-red-950/50',
-    border: 'border-red-500/30'
-  },
-  seer: {
-    icon: '🔮',
-    label: 'La Voyante',
-    action: 'observe le village...',
-    color: 'text-violet-400',
-    bg: 'bg-violet-950/50',
-    border: 'border-violet-500/30'
-  },
-  witch: {
-    icon: '🧪',
-    label: 'La Sorcière',
-    action: 'prépare ses potions...',
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-950/50',
-    border: 'border-emerald-500/30'
-  },
-  waiting: {
-    icon: '⏳',
-    label: 'En attente',
-    action: 'Passage à la phase suivante...',
-    color: 'text-neutral-400',
-    bg: 'bg-neutral-900/50',
-    border: 'border-neutral-500/30'
-  }
-}
+/* --- Computed --- */
+const config = computed(() => getNightRoleUI(props.currentRole))
 </script>
 
 <template>
   <div
-    v-if="currentRole && roleConfig[currentRole]"
+    v-if="currentRole"
     class="rounded-2xl border backdrop-blur-sm p-4 transition-all duration-500"
     :class="[
-      roleConfig[currentRole].bg,
-      roleConfig[currentRole].border,
+      config.bgColor,
+      config.borderColor,
       isMyTurn && 'ring-2 ring-offset-2 ring-offset-transparent animate-pulse-glow',
       isMyTurn && (currentRole === 'werewolf' ? 'ring-red-500' : currentRole === 'seer' ? 'ring-violet-500' : 'ring-emerald-500')
     ]"
@@ -57,30 +27,30 @@ const roleConfig = {
       <!-- Animated icon -->
       <div
         class="w-16 h-16 rounded-full flex items-center justify-center text-4xl"
-        :class="[roleConfig[currentRole].bg, isMyTurn ? 'animate-pulse' : 'animate-float']"
+        :class="[config.bgColor, isMyTurn ? 'animate-pulse' : 'animate-float']"
       >
-        {{ roleConfig[currentRole].icon }}
+        {{ config.icon }}
       </div>
 
       <!-- Info -->
       <div class="flex-1">
         <p
           class="font-bold text-lg"
-          :class="roleConfig[currentRole].color"
+          :class="config.textColor"
         >
-          {{ roleConfig[currentRole].label }}
+          {{ config.label }}
         </p>
         <p class="text-neutral-400 text-sm">
-          {{ roleConfig[currentRole].action }}
+          {{ config.action }}
         </p>
 
         <!-- Your turn indicator -->
         <p
           v-if="isMyTurn"
           class="mt-1 text-xs font-semibold uppercase tracking-wider"
-          :class="roleConfig[currentRole].color"
+          :class="config.textColor"
         >
-          👆 C'est ton tour !
+          C'est ton tour !
         </p>
       </div>
     </div>

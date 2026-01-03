@@ -1,65 +1,27 @@
-type NarrationContext = 'night_start' | 'werewolves_wake' | 'werewolves_done' | 'seer_wake' | 'seer_done' | 'witch_wake' | 'witch_done' | 'day_start' | 'death_announce' | 'vote_start' | 'vote_result' | 'hunter_death' | 'game_end'
+/**
+ * Narrator Composable
+ * Handles TTS, AI narration, and ambient sounds
+ */
 
-// Strip SSML tags for display purposes (exported for use in components)
-export function stripSSML(text: string): string {
-  return text
-    // Remove break tags
-    .replace(/<break[^>]*\/?>/gi, ' ')
-    // Remove emphasis tags but keep content
-    .replace(/<emphasis[^>]*>(.*?)<\/emphasis>/gi, '$1')
-    // Remove prosody tags but keep content
-    .replace(/<prosody[^>]*>(.*?)<\/prosody>/gi, '$1')
-    // Remove any other XML tags
-    .replace(/<[^>]+>/g, '')
-    // Clean up multiple spaces
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+import type {
+  NarrationContext,
+  NarrationData,
+  BatchContext,
+  BatchResponse,
+  TTSResponse,
+  VoiceType,
+  AmbientSound
+} from './narrator/types'
+import {
+  getDefaultMessage,
+  getVoiceTypeForContext,
+  LEGACY_MESSAGES
+} from './narrator/messages.config'
+import { AMBIENT_SOUNDS } from './narrator/ambient'
+import { stripSSML, findBestFrenchVoice } from './narrator/tts'
 
-interface NarrationData {
-  victimName?: string
-  killedBy?: 'werewolves' | 'witch' | 'hunter' | 'village'
-  winner?: 'village' | 'werewolf'
-  dayNumber?: number
-  playerCount?: number
-  aliveCount?: number
-  playerNames?: string[]
-}
-
-interface BatchContext {
-  context: NarrationContext
-  data?: NarrationData
-}
-
-interface BatchResponse {
-  narrations: Record<NarrationContext, string>
-  storyTheme: string
-}
-
-interface TTSResponse {
-  success: boolean
-  audio?: string
-  contentType?: string
-  useFallback?: boolean
-  message?: string
-}
-
-type AmbientSound = 'night' | 'day' | 'vote' | 'death' | 'victory' | 'defeat' | 'suspense' | 'transition'
-
-// Voice types: 'story' for atmospheric narration, 'event' for game announcements
-type VoiceType = 'story' | 'event'
-
-// Ambient sound URLs
-const AMBIENT_SOUNDS: Record<AmbientSound, string> = {
-  night: '/sounds/night.mp3',
-  day: '/sounds/day.mp3',
-  vote: '/sounds/night.mp3', // Reuse night for vote tension
-  death: '/sounds/night.mp3',
-  victory: '/sounds/day.mp3',
-  defeat: '/sounds/night.mp3',
-  suspense: '/sounds/night.mp3',
-  transition: '/sounds/day.mp3'
-}
+// Re-export stripSSML for use in components
+export { stripSSML } from './narrator/tts'
 
 export function useNarrator() {
   /* ═══════════════════════════════════════════
@@ -81,43 +43,10 @@ export function useNarrator() {
      BROWSER TTS SETUP
      ═══════════════════════════════════════════ */
 
-  // Find the best French voice (prefer natural/neural voices)
-  function findBestVoice(): SpeechSynthesisVoice | null {
-    const voices = window.speechSynthesis.getVoices()
-    const frenchVoices = voices.filter(v => v.lang.startsWith('fr'))
-
-    if (frenchVoices.length === 0) return null
-
-    // Priority order for natural-sounding voices
-    const preferredVoiceNames = [
-      'Google français',
-      'Microsoft Henri',
-      'Microsoft Claude',
-      'Microsoft Paul',
-      'Thomas',
-      'Audrey',
-      'Amélie',
-      'Google French',
-      'French France'
-    ]
-
-    for (const preferred of preferredVoiceNames) {
-      const voice = frenchVoices.find(v =>
-        v.name.toLowerCase().includes(preferred.toLowerCase())
-      )
-      if (voice) return voice
-    }
-
-    const remoteVoice = frenchVoices.find(v => !v.localService)
-    if (remoteVoice) return remoteVoice
-
-    return frenchVoices[0] || null
-  }
-
   function initVoices() {
     const voices = window.speechSynthesis.getVoices()
     if (voices.length > 0) {
-      selectedVoice.value = findBestVoice()
+      selectedVoice.value = findBestFrenchVoice()
       voicesLoaded.value = true
     }
   }
@@ -358,20 +287,6 @@ export function useNarrator() {
      AI NARRATION
      ═══════════════════════════════════════════ */
 
-  // Determine voice type based on narration context
-  function getVoiceTypeForContext(context: NarrationContext): VoiceType {
-    // Story narration contexts (atmospheric, deep voice)
-    const storyContexts: NarrationContext[] = [
-      'night_start', 'werewolves_wake', 'werewolves_done',
-      'seer_wake', 'seer_done', 'witch_wake', 'witch_done',
-      'day_start', 'game_end'
-    ]
-
-    // Event contexts (announcements, female voice)
-    // death_announce, vote_start, vote_result, hunter_death
-    return storyContexts.includes(context) ? 'story' : 'event'
-  }
-
   async function narrateWithAI(
     context: NarrationContext,
     data?: NarrationData,
@@ -488,40 +403,6 @@ export function useNarrator() {
   }
 
   /* ═══════════════════════════════════════════
-     DEFAULT MESSAGES
-     ═══════════════════════════════════════════ */
-
-  function getDefaultMessage(context: NarrationContext, data?: NarrationData): string {
-    // Default messages with SSML for natural speech pauses and emphasis
-    const messages: Record<NarrationContext, string> = {
-      night_start: 'La nuit tombe sur le village.<break time="400ms"/> Fermez les yeux.',
-      werewolves_wake: 'Les <emphasis level="moderate">loups-garous</emphasis> se réveillent.<break time="300ms"/> Ils choisissent leur victime.',
-      werewolves_done: 'Les loups-garous se rendorment.<break time="300ms"/>',
-      seer_wake: 'La <emphasis level="moderate">voyante</emphasis> se réveille.<break time="300ms"/> Elle peut découvrir un rôle.',
-      seer_done: 'La voyante se rendort.<break time="300ms"/>',
-      witch_wake: 'La <emphasis level="moderate">sorcière</emphasis> se réveille avec ses potions.<break time="300ms"/>',
-      witch_done: 'La sorcière se rendort.<break time="300ms"/>',
-      day_start: data?.victimName
-        ? `Le soleil se lève.<break time="400ms"/> <emphasis level="strong">${data.victimName}</emphasis> a été trouvé <emphasis level="moderate">mort</emphasis> ce matin.`
-        : 'Le soleil se lève.<break time="400ms"/> Le village se réveille. Personne n\'est mort cette nuit.',
-      death_announce: data?.victimName
-        ? `<emphasis level="strong">${data.victimName}</emphasis> a été retrouvé <emphasis level="moderate">mort</emphasis> ce matin.<break time="500ms"/>`
-        : 'Un villageois a été <emphasis level="moderate">tué</emphasis> cette nuit.<break time="500ms"/>',
-      vote_start: 'Le village doit voter.<break time="300ms"/> Trouvez le <emphasis level="moderate">loup</emphasis> parmi vous.',
-      vote_result: data?.victimName
-        ? `Le village a décidé d'éliminer <emphasis level="strong">${data.victimName}</emphasis>.<break time="400ms"/>`
-        : 'Le village a rendu son verdict.<break time="400ms"/>',
-      hunter_death: data?.victimName
-        ? `<emphasis level="strong">${data.victimName}</emphasis> était le chasseur!<break time="400ms"/> Il peut tirer sur quelqu'un.`
-        : 'Le <emphasis level="moderate">chasseur</emphasis> tire une dernière fois.<break time="400ms"/>',
-      game_end: data?.winner === 'village'
-        ? '<prosody rate="slow">Félicitations!</prosody><break time="500ms"/> Le village a éliminé tous les <emphasis level="moderate">loups-garous</emphasis>!'
-        : 'Les <emphasis level="moderate">loups-garous</emphasis> ont gagné.<break time="500ms"/> Ils ont dévoré le village.'
-    }
-    return messages[context]
-  }
-
-  /* ═══════════════════════════════════════════
      CONVENIENCE METHODS
      ═══════════════════════════════════════════ */
 
@@ -579,25 +460,8 @@ export function useNarrator() {
     stop: () => stopAmbient(true)
   }
 
-  // Legacy messages for backward compatibility
-  const messages = {
-    nightStart: 'Le village s\'endort. La nuit tombe sur le village.',
-    werewolvesWake: 'Les loups-garous se réveillent et désignent une victime.',
-    werewolvesSleep: 'Les loups-garous se rendorment.',
-    seerWakes: 'La voyante se réveille et peut découvrir l\'identité d\'un joueur.',
-    seerSleeps: 'La voyante se rendort.',
-    witchWakes: 'La sorcière se réveille.',
-    witchSleeps: 'La sorcière se rendort.',
-    dayStart: 'Le soleil se lève sur le village.',
-    noDeathNight: 'Miracle ! Personne n\'est mort cette nuit.',
-    deathNight: (name: string) => `${name} a été dévoré par les loups-garous cette nuit.`,
-    voteStart: 'Le village doit maintenant voter pour éliminer un suspect.',
-    voteResult: (name: string) => `Le village a décidé d'éliminer ${name}.`,
-    noVote: 'Le village n\'a pas réussi à se mettre d\'accord.',
-    hunterDeath: (name: string) => `${name} était le chasseur ! Il peut emporter quelqu'un dans la tombe.`,
-    villageWins: 'Félicitations ! Le village a éliminé tous les loups-garous !',
-    werewolvesWin: 'Les loups-garous ont dévoré tous les villageois. Ils remportent la partie !'
-  }
+  // Legacy messages from config module
+  const messages = LEGACY_MESSAGES
 
   return {
     // TTS

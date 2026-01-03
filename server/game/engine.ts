@@ -1,13 +1,25 @@
 /**
  * Game Engine - Core game state machine
- * Handles all phase transitions, victory conditions, and game flow
+ * Handles all phase transitions and game flow
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, GameSettings } from '../../shared/types/database.types'
-import type { Game, Player, NightResult, Winner, NightRole } from './types'
+import type { Game, Player, Winner, NightRole } from './types'
 import { DEFAULT_SETTINGS } from '../../shared/config/game.config'
 import * as db from '../services/database'
+
+// Import from dedicated modules
+import { checkVictory, getVictoryMessage } from './victory'
+import { resolveNight, applyNightResult, getNightDeathMessage } from './resolution'
+
+// Re-export from dedicated modules
+export { checkVictory, getVictoryMessage } from './victory'
+export {
+  resolveNight,
+  applyNightResult,
+  getNightDeathMessage
+} from './resolution'
 
 /* ═══════════════════════════════════════════
    SETTINGS
@@ -25,110 +37,6 @@ export function getPhaseEndTime(settings: GameSettings, phase: Game['status']): 
     hunter: 30000 // 30 seconds for hunter
   }
   return new Date(Date.now() + (durations[phase] || 0))
-}
-
-/* ═══════════════════════════════════════════
-   VICTORY CONDITIONS
-   ═══════════════════════════════════════════ */
-
-export function checkVictory(players: Player[]): Winner {
-  const alive = players.filter(p => p.is_alive)
-  const wolves = alive.filter(p => p.role === 'werewolf')
-  const villagers = alive.filter(p => p.role !== 'werewolf')
-
-  if (wolves.length === 0) return 'village'
-  if (wolves.length >= villagers.length) return 'werewolf'
-  return null
-}
-
-export function getVictoryMessage(winner: Winner): string {
-  if (winner === 'village') {
-    return 'Le village a éliminé tous les loups-garous ! Les villageois remportent la victoire !'
-  }
-  if (winner === 'werewolf') {
-    return 'Les loups-garous ont dévoré le village ! Les loups remportent la victoire !'
-  }
-  return ''
-}
-
-/* ═══════════════════════════════════════════
-   NIGHT RESOLUTION
-   ═══════════════════════════════════════════ */
-
-export async function resolveNight(
-  client: SupabaseClient<Database>,
-  gameId: string,
-  dayNumber: number,
-  players: Player[]
-): Promise<NightResult> {
-  const actions = await db.getNightActions(client, gameId, dayNumber)
-
-  const result: NightResult = {
-    killedByWolves: null,
-    savedByWitch: false,
-    killedByWitch: null,
-    seerTarget: null
-  }
-
-  if (actions.length === 0) return result
-
-  // Count werewolf kills
-  const wolfVotes = actions
-    .filter(a => a.action_type === 'werewolf_kill' && a.target_id)
-    .map(a => ({ target_id: a.target_id! }))
-
-  const voteCounts = db.countVotes(wolfVotes)
-  const { targetId: wolfVictimId } = db.findMajorityTarget(voteCounts)
-
-  if (wolfVictimId) {
-    result.killedByWolves = players.find(p => p.id === wolfVictimId) || null
-  }
-
-  // Witch save
-  const witchHeal = actions.find(a => a.action_type === 'witch_save')
-  if (witchHeal?.target_id === wolfVictimId) {
-    result.savedByWitch = true
-    result.killedByWolves = null
-  }
-
-  // Witch kill
-  const witchKill = actions.find(a => a.action_type === 'witch_kill')
-  if (witchKill?.target_id) {
-    result.killedByWitch = players.find(p => p.id === witchKill.target_id) || null
-  }
-
-  // Seer view
-  const seerLook = actions.find(a => a.action_type === 'seer_view')
-  if (seerLook?.target_id) {
-    result.seerTarget = players.find(p => p.id === seerLook.target_id) || null
-  }
-
-  return result
-}
-
-export async function applyNightResult(
-  client: SupabaseClient<Database>,
-  result: NightResult
-): Promise<Player[]> {
-  const dead: Player[] = []
-
-  if (result.killedByWolves) {
-    await db.killPlayer(client, result.killedByWolves.id)
-    dead.push(result.killedByWolves)
-  }
-
-  if (result.killedByWitch) {
-    await db.killPlayer(client, result.killedByWitch.id)
-    dead.push(result.killedByWitch)
-  }
-
-  return dead
-}
-
-export function getNightDeathMessage(dead: Player[]): string {
-  if (dead.length === 0) return 'Le village se réveille. Personne n\'est mort cette nuit.'
-  if (dead.length === 1) return `Le village se réveille. ${dead[0]!.name} a été retrouvé mort cette nuit.`
-  return `Le village se réveille. ${dead.map(p => p.name).join(' et ')} ont été retrouvés morts cette nuit.`
 }
 
 /* ═══════════════════════════════════════════

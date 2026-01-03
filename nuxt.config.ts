@@ -35,9 +35,9 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Loup Agrou',
+      title: 'Mistairy',
       meta: [
-        { name: 'description', content: 'Jouer au Loup Garou en vrai sans cartes physiques' },
+        { name: 'description', content: 'Social deduction game engine - Create your own mystery games' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' }
       ]
     }

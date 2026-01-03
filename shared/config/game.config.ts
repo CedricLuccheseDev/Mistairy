@@ -19,24 +19,6 @@ export const DEFAULT_SETTINGS: GameSettings = {
   }
 }
 
-
-// Valid actions per role
-export const ROLE_ACTIONS: Record<string, string[]> = {
-  werewolf: ['werewolf_kill'],
-  seer: ['seer_view'],
-  witch: ['witch_save', 'witch_kill', 'witch_skip'],
-  hunter: ['hunter_kill', 'hunter_skip']
-} as const
-
-// Role info with display name and team
-export const ROLE_INFO: Record<Role, { name: string; team: 'village' | 'werewolf' }> = {
-  werewolf: { name: 'Loup-Garou', team: 'werewolf' },
-  villager: { name: 'Villageois', team: 'village' },
-  seer: { name: 'Voyante', team: 'village' },
-  witch: { name: 'Sorcière', team: 'village' },
-  hunter: { name: 'Chasseur', team: 'village' }
-}
-
 // Calculate roles based on player count and settings
 export function calculateRoles(playerCount: number, settings?: GameSettings): Role[] {
   const roles: Role[] = []

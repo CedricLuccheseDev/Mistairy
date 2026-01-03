@@ -1,9 +1,21 @@
 import { config } from 'dotenv'
+import { inspect } from 'util'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../shared/types/database.types'
 
 // Load environment variables from .env file
 config()
+
+// Disable Node.js output truncation for debugging
+inspect.defaultOptions.maxStringLength = null
+inspect.defaultOptions.depth = null
+inspect.defaultOptions.maxArrayLength = null
+
+// Log full narration without any truncation
+function logNarration(prefix: string, text: string): void {
+  // Use process.stdout.write to avoid any console.log truncation
+  process.stdout.write(`${prefix}"${text}"\n\n`)
+}
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_KEY
@@ -232,7 +244,7 @@ async function testNarrationAPI() {
       }
 
       console.log(`\n   ${step.description}`)
-      console.log(`   → "${result.narration}"`)
+      logNarration('   → ', result.narration)
       passed++
     }
     else {
@@ -339,7 +351,7 @@ async function simulateGame() {
     playerNames: players.map(p => p.name)
   })
   if (nightNarration) {
-    console.log(`   📢 "${nightNarration.narration}"`)
+    logNarration('   📢 ', nightNarration.narration)
   }
 
   // Start game
@@ -360,7 +372,7 @@ async function simulateGame() {
 
   // Werewolf wakes
   const werewolfNarration = await testNarration('werewolves_wake')
-  if (werewolfNarration) console.log(`   📢 "${werewolfNarration.narration}"`)
+  if (werewolfNarration) logNarration('   📢 ', werewolfNarration.narration)
 
   // Werewolf votes
   console.log(`   🐺 ${werewolf.name} (Loup) vote pour tuer ${victim.name}`)
@@ -374,7 +386,7 @@ async function simulateGame() {
 
   // Seer looks at werewolf
   const seerNarration = await testNarration('seer_wake')
-  if (seerNarration) console.log(`   📢 "${seerNarration.narration}"`)
+  if (seerNarration) logNarration('   📢 ', seerNarration.narration)
 
   console.log(`   🔮 ${seer.name} (Voyante) observe ${werewolf.name} → C'est un LOUP !`)
   await supabase.from('night_actions').insert({
@@ -387,7 +399,7 @@ async function simulateGame() {
 
   // Witch sees victim
   const witchNarration = await testNarration('witch_wake')
-  if (witchNarration) console.log(`   📢 "${witchNarration.narration}"`)
+  if (witchNarration) logNarration('   📢 ', witchNarration.narration)
 
   console.log(`   🧪 ${witch.name} (Sorcière) voit que ${victim.name} a été attaqué`)
   console.log(`   🧪 ${witch.name} choisit de NE PAS utiliser sa potion de vie`)
@@ -405,7 +417,7 @@ async function simulateGame() {
     totalDeaths: 1
   })
   console.log(`   💀 ${victim.name} est dévoré !`)
-  if (deathNarration) console.log(`   📢 "${deathNarration.narration}"`)
+  if (deathNarration) logNarration('   📢 ', deathNarration.narration)
 
   // Day phase
   const dayEndAt = new Date(Date.now() + settings.discussion_time * 1000).toISOString()
@@ -421,7 +433,7 @@ async function simulateGame() {
     deadPlayers: [victim.name]
   })
   console.log('\n☀️ ÉTAPE 5: Premier jour')
-  if (dayNarration) console.log(`   📢 "${dayNarration.narration}"`)
+  if (dayNarration) logNarration('   📢 ', dayNarration.narration)
   console.log(`   💬 Débat... La voyante sait que ${werewolf.name} est le loup !`)
 
   // Vote phase
@@ -433,7 +445,7 @@ async function simulateGame() {
 
   const voteNarration = await testNarration('vote_start', { aliveCount: players.length - 1 })
   console.log('\n🗳️ ÉTAPE 6: Vote')
-  if (voteNarration) console.log(`   📢 "${voteNarration.narration}"`)
+  if (voteNarration) logNarration('   📢 ', voteNarration.narration)
 
   const livingPlayers = players.filter(p => p.id !== victim.id)
 
@@ -458,7 +470,7 @@ async function simulateGame() {
 
   const voteResultNarration = await testNarration('vote_result', { victimName: werewolf.name })
   console.log(`   💀 ${werewolf.name} est éliminé par le village !`)
-  if (voteResultNarration) console.log(`   📢 "${voteResultNarration.narration}"`)
+  if (voteResultNarration) logNarration('   📢 ', voteResultNarration.narration)
 
   // Check win condition
   const { data: alivePlayers } = await supabase
@@ -483,7 +495,7 @@ async function simulateGame() {
       aliveCount: alivePlayers?.length || 0
     })
     console.log('   🎉 VICTOIRE DU VILLAGE !')
-    if (endNarration) console.log(`   📢 "${endNarration.narration}"`)
+    if (endNarration) logNarration('   📢 ', endNarration.narration)
   }
   else {
     console.log('   🐺 La partie continue...')

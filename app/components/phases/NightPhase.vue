@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import { getNightRoleUI } from '#shared/config/roles.config'
+import type { NightRole } from '#shared/types/game'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -20,37 +22,9 @@ const lastNarratedRole = ref<string | null>(null)
 /* --- Services --- */
 const { narrate } = useNarrator()
 
-/* --- Role config --- */
-const roleConfig = {
-  werewolf: {
-    icon: '🐺',
-    label: 'Les Loups-Garous',
-    action: 'Choisissez votre victime',
-    color: 'red' as const
-  },
-  seer: {
-    icon: '🔮',
-    label: 'La Voyante',
-    action: 'Découvrez un rôle',
-    color: 'violet' as const
-  },
-  witch: {
-    icon: '🧪',
-    label: 'La Sorcière',
-    action: 'Utilisez vos potions',
-    color: 'emerald' as const
-  },
-  waiting: {
-    icon: '🌙',
-    label: 'La nuit...',
-    action: 'Le village dort',
-    color: 'violet' as const
-  }
-}
-
 /* --- Computed --- */
 // Use game.current_night_role directly from the server
-const currentActiveRole = computed((): 'werewolf' | 'seer' | 'witch' | 'waiting' => {
+const currentActiveRole = computed((): NightRole | 'waiting' => {
   return props.game.current_night_role || 'waiting'
 })
 
@@ -70,7 +44,9 @@ const targets = computed(() => {
 })
 
 const showActionUI = computed(() => canAct.value && isMyTurn.value && !hasActed.value)
-const config = computed(() => roleConfig[currentActiveRole.value])
+
+// Get role UI config from centralized source
+const config = computed(() => getNightRoleUI(currentActiveRole.value))
 
 const waitMessage = computed(() => {
   if (!props.currentPlayer.is_alive) return { icon: '💀', title: 'Éliminé', subtitle: 'Tu observes depuis l\'au-delà...' }
@@ -125,23 +101,15 @@ function onSeerResult(result: { name: string; role: string; emoji: string }) {
     <!-- Radial glow based on active role -->
     <div
       class="absolute inset-0 bg-gradient-radial pointer-events-none transition-all duration-1000"
-      :class="{
-        'from-red-500/20 via-transparent to-transparent': config.color === 'red',
-        'from-violet-500/20 via-transparent to-transparent': config.color === 'violet',
-        'from-emerald-500/20 via-transparent to-transparent': config.color === 'emerald'
-      }"
+      :style="{ '--tw-gradient-from': config.glowColor.replace('0.5', '0.2') }"
     />
 
-    <!-- Icon glow (radial gradient, no blur needed) -->
+    <!-- Icon glow (radial gradient) -->
     <Teleport v-if="showActionUI" to="body">
       <div
         class="fixed inset-0 pointer-events-none -z-10 transition-opacity duration-500"
         :style="{
-          background: config.color === 'red'
-            ? 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(239, 68, 68, 0.5) 0%, transparent 70%)'
-            : config.color === 'violet'
-              ? 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(139, 92, 246, 0.5) 0%, transparent 70%)'
-              : 'radial-gradient(ellipse 80% 60% at 50% 33%, rgba(16, 185, 129, 0.5) 0%, transparent 70%)'
+          background: `radial-gradient(ellipse 80% 60% at 50% 33%, ${config.glowColor} 0%, transparent 70%)`
         }"
       />
     </Teleport>
@@ -163,11 +131,7 @@ function onSeerResult(result: { name: string; role: string; emoji: string }) {
         <!-- Role Label -->
         <h1
           class="text-3xl sm:text-4xl font-black tracking-tight mb-2 transition-colors duration-500"
-          :class="{
-            'text-red-400': config.color === 'red',
-            'text-violet-400': config.color === 'violet',
-            'text-emerald-400': config.color === 'emerald'
-          }"
+          :class="config.textColor"
         >
           {{ config.label }}
         </h1>
@@ -181,11 +145,7 @@ function onSeerResult(result: { name: string; role: string; emoji: string }) {
         <div
           v-if="showActionUI"
           class="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-full animate-pulse"
-          :class="{
-            'bg-red-500/20 text-red-300': config.color === 'red',
-            'bg-violet-500/20 text-violet-300': config.color === 'violet',
-            'bg-emerald-500/20 text-emerald-300': config.color === 'emerald'
-          }"
+          :class="[config.bgColor, config.textColor]"
         >
           <span class="w-2 h-2 rounded-full bg-current animate-ping" />
           <span class="font-semibold">C'est ton tour</span>

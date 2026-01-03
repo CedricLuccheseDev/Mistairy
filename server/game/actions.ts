@@ -6,8 +6,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, GameSettings } from '../../shared/types/database.types'
 import type { Game, Player } from './types'
-import type { Role, NightActionType } from '../../shared/types/game'
-import { ROLE_ACTIONS } from '../../shared/config/game.config'
+import type { NightActionType } from '../../shared/types/game'
+import { isValidActionForRole } from '../../shared/config/roles.config'
 import * as db from '../services/database'
 import * as engine from './engine'
 
@@ -188,8 +188,7 @@ export async function submitNightAction(
   if (!player.role) return fail('Pas de rôle assigné')
 
   // Check if action is valid for role
-  const allowedActions = ROLE_ACTIONS[player.role as Role] || []
-  if (!allowedActions.includes(actionType)) {
+  if (!isValidActionForRole(player.role, actionType)) {
     return fail('Action non autorisée pour ce rôle')
   }
 
