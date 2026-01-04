@@ -8,10 +8,13 @@ import type { Database, GameSettings } from '../../../shared/types/database.type
 import type { Player } from '../../game/types'
 import * as engine from '../../game/engine'
 import * as db from '../../services/database'
+import { checkAndResolveVotes } from '../../game/actions'
 
 type Game = Database['public']['Tables']['games']['Row']
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig()
+  const geminiApiKey = config.geminiApiKey as string | undefined
   const body = await readBody(event)
   const { gameId } = body
 
@@ -49,21 +52,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, message: 'Impossible de récupérer les joueurs' })
   }
 
-  const settings = (game.settings as unknown as GameSettings) || engine.getDefaultSettings()
-
   try {
     switch (game.status) {
       case 'night':
-        return await handleNightEnd(client, game, players)
+        return await handleNightEnd(client, game, players, geminiApiKey)
 
       case 'day':
-        return await handleDayEnd(client, game)
+        return await handleDayEnd(client, game, geminiApiKey)
 
       case 'vote':
-        return await handleVoteEnd(client, game, players)
+        return await handleVoteEnd(client, game, players, geminiApiKey)
+
+      case 'vote_result':
+        return await handleVoteResultEnd(client, game, geminiApiKey)
 
       case 'hunter':
-        return await handleHunterTimeout(client, game, settings)
+        return await handleHunterTimeout(client, game, geminiApiKey)
 
       default:
         return { advanced: false, reason: 'invalid_phase' }
@@ -78,22 +82,23 @@ export default defineEventHandler(async (event) => {
 async function handleNightEnd(
   client: ReturnType<typeof getServiceClient>,
   game: Game,
-  players: Player[]
+  players: Player[],
+  geminiApiKey?: string
 ) {
   const settings = (game.settings as unknown as GameSettings) || engine.getDefaultSettings()
 
-  // Timer expired - advance to next night role (not directly to day)
+  // Timer expired - advance to next night role (not directly to day_intro)
   // If current role didn't act in time, they lose their turn
-  const result = await engine.advanceToNextNightRole(client, game, players, settings)
+  const result = await engine.advanceToNextNightRole(client, game, players, settings, geminiApiKey)
 
   if (result.transitionedToDay) {
-    // All night roles done, now in day phase
+    // All night roles done, now in day_intro phase (narration)
     const updated = await db.getPlayers(client, game.id)
     const winner = engine.checkVictory(updated)
     return {
       advanced: true,
       from: 'night',
-      to: winner ? 'finished' : 'day',
+      to: winner ? 'finished' : 'day_intro',
       winner
     }
   }
@@ -109,62 +114,49 @@ async function handleNightEnd(
 
 async function handleDayEnd(
   client: ReturnType<typeof getServiceClient>,
-  game: Game
+  game: Game,
+  geminiApiKey?: string
 ) {
-  await engine.transitionToVote(client, game)
+  await engine.transitionToVote(client, game, geminiApiKey)
   return { advanced: true, from: 'day', to: 'vote' }
 }
 
 async function handleVoteEnd(
   client: ReturnType<typeof getServiceClient>,
   game: Game,
-  players: Player[]
+  _players: Player[],
+  geminiApiKey?: string
 ) {
-  // Count votes and resolve
-  const votes = await db.getDayVotes(client, game.id, game.day_number)
-  const counts = db.countVotes(votes)
-  const { targetId, isTie } = db.findMajorityTarget(counts)
+  // Use shared vote resolution logic from actions.ts
+  const result = await checkAndResolveVotes(client, game, geminiApiKey)
 
-  const eliminated = targetId ? players.find(p => p.id === targetId) : null
-
-  // Create result event
-  const message = isTie
-    ? 'Égalité ! Personne n\'est éliminé.'
-    : eliminated
-      ? `${eliminated.name} a été éliminé par le village !`
-      : 'Aucun vote. Personne n\'est éliminé.'
-
-  await db.createGameEvent(client, game.id, 'vote_result', message, {
-    eliminated: eliminated?.id || null,
-    isTie
-  })
-
-  // Handle elimination
-  if (eliminated && !isTie) {
-    await db.killPlayer(client, eliminated.id)
-
-    // Hunter check
-    if (eliminated.role === 'hunter') {
-      await engine.transitionToHunter(client, game.id, eliminated)
-      return { advanced: true, from: 'vote', to: 'hunter', eliminated: eliminated.name }
-    }
-  }
-
-  // Transition to night
-  const result = await engine.transitionToNight(client, game)
   return {
     advanced: true,
     from: 'vote',
+    to: 'vote_result',
+    eliminated: result?.eliminated || null
+  }
+}
+
+async function handleVoteResultEnd(
+  client: ReturnType<typeof getServiceClient>,
+  game: Game,
+  geminiApiKey?: string
+) {
+  // Transition from vote_result to night_intro (or hunter if applicable)
+  const result = await engine.transitionFromVoteResult(client, game, geminiApiKey)
+  return {
+    advanced: true,
+    from: 'vote_result',
     to: result.nextPhase,
-    winner: result.winner,
-    eliminated: eliminated?.name || null
+    winner: result.winner
   }
 }
 
 async function handleHunterTimeout(
   client: ReturnType<typeof getServiceClient>,
   game: Game,
-  settings: GameSettings
+  geminiApiKey?: string
 ) {
   if (game.hunter_target_pending) {
     await db.createGameEvent(client, game.id, 'hunter_timeout',
@@ -176,24 +168,12 @@ async function handleHunterTimeout(
   const winner = engine.checkVictory(players)
 
   if (winner) {
-    await engine.endGame(client, game.id, winner)
+    await engine.endGame(client, game.id, winner, undefined, geminiApiKey)
     return { advanced: true, from: 'hunter', to: 'finished', winner }
   }
 
-  // Transition to night
-  const firstNightRole = engine.getFirstNightRole(players)
+  // Transition based on where hunter died (night → day_intro, vote → night_intro)
+  const result = await engine.transitionAfterHunter(client, game, undefined, geminiApiKey)
 
-  await client.from('games').update({
-    status: 'night',
-    day_number: game.day_number + 1,
-    phase_end_at: engine.getPhaseEndTime(settings, 'night').toISOString(),
-    hunter_target_pending: null,
-    current_night_role: firstNightRole
-  }).eq('id', game.id)
-
-  await db.createGameEvent(client, game.id, 'night_start',
-    `Nuit ${game.day_number + 1} - Le village s'endort après cette journée tragique.`,
-    { day_number: game.day_number + 1 })
-
-  return { advanced: true, from: 'hunter', to: 'night' }
+  return { advanced: true, from: 'hunter', to: result.nextPhase, winner: result.winner }
 }

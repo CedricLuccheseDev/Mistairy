@@ -1,15 +1,14 @@
 /**
- * Start Game API
- * Thin handler - business logic in game/lobby.ts
+ * Restart Game API
+ * Resets a finished game back to lobby state
  */
 
 import { serverSupabaseClient } from '#supabase/server'
 import type { Database } from '../../../shared/types/database.types'
-import { startGame } from '../../game'
+import { restartGame } from '../../game'
 import { logger } from '../../utils/logger'
 
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
   const body = await readBody(event)
   const { gameId, playerId } = body
 
@@ -42,23 +41,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Joueur non trouvé dans cette partie' })
   }
 
-  // Get all players
-  const { data: players, error: playersError } = await client
-    .from('players')
-    .select('*')
-    .eq('game_id', gameId)
-
-  if (playersError || !players) {
-    throw createError({ statusCode: 500, message: 'Erreur lors de la récupération des joueurs' })
-  }
-
-  const result = await startGame(client, game, player, players, config.geminiApiKey)
+  const result = await restartGame(client, game, player)
 
   if (!result.success) {
     throw createError({ statusCode: 400, message: result.error })
   }
 
-  logger.game.start(game.code, players.length)
+  logger.info('GAME', `${logger.code(game.code)} restarted`)
 
   return { success: true }
 })

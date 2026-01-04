@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
+import type { Role } from '#shared/types/game'
 
 type Player = Database['public']['Tables']['players']['Row']
 
@@ -10,12 +12,29 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   color?: 'red' | 'violet' | 'amber' | 'orange' | 'emerald'
   selectedId?: string | null
+  currentPlayer?: Player | null
+  recognizedPlayerIds?: string[] // IDs of players whose role should be shown (e.g. other werewolves)
 }>(), {
   disabled: false,
   loading: false,
   color: 'violet',
-  selectedId: null
+  selectedId: null,
+  currentPlayer: null,
+  recognizedPlayerIds: () => []
 })
+
+/* --- Helpers --- */
+function getPlayerIcon(target: Player): string {
+  // Show role icon for current player
+  if (props.currentPlayer && target.id === props.currentPlayer.id && target.role) {
+    return ROLES_CONFIG[target.role as Role]?.emoji || '👤'
+  }
+  // Show role icon for recognized players (e.g. werewolves see each other)
+  if (props.recognizedPlayerIds.includes(target.id) && target.role) {
+    return ROLES_CONFIG[target.role as Role]?.emoji || '👤'
+  }
+  return '👤'
+}
 
 /* --- Emits --- */
 const emit = defineEmits<{
@@ -72,7 +91,7 @@ function selectTarget(player: Player) {
 </script>
 
 <template>
-  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-5 w-full">
     <button
       v-for="(target, index) in targets"
       :key="target.id"
@@ -83,7 +102,7 @@ function selectTarget(player: Player) {
     >
       <!-- Card Container -->
       <div
-        class="relative flex flex-col items-center p-4 rounded-2xl border-2 bg-gradient-to-br backdrop-blur-sm transition-all duration-300 overflow-hidden"
+        class="relative flex flex-col items-center p-5 sm:p-6 rounded-2xl border-2 bg-gradient-to-br backdrop-blur-sm transition-all duration-300 overflow-hidden min-h-[140px] sm:min-h-[160px]"
         :class="[
           colorClasses.bg,
           colorClasses.border,
@@ -94,10 +113,10 @@ function selectTarget(player: Player) {
       >
         <!-- Avatar Circle -->
         <div
-          class="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/10 flex items-center justify-center mb-3 transition-transform duration-300 group-hover:scale-110"
+          class="relative w-18 h-18 sm:w-22 sm:h-22 rounded-full bg-white/10 flex items-center justify-center mb-3 transition-transform duration-300 group-hover:scale-110"
         >
           <!-- Avatar Icon -->
-          <span class="text-4xl sm:text-5xl">👤</span>
+          <span class="text-5xl sm:text-6xl">{{ getPlayerIcon(target) }}</span>
 
           <!-- Hover Glow Ring -->
           <div

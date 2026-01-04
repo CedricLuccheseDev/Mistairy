@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { GameSettings } from '#shared/types/database.types'
 import { DEFAULT_SETTINGS, MIN_PLAYERS, MAX_PLAYERS } from '#shared/config/game.config'
+import * as gameApi from '~/services/gameApi'
 
 /* --- Props --- */
 const props = defineProps<{
@@ -120,14 +121,7 @@ async function saveSettings() {
   isSaving.value = true
 
   try {
-    await $fetch('/api/game/update-settings', {
-      method: 'POST',
-      body: {
-        gameId: props.gameId,
-        settings
-      }
-    })
-
+    await gameApi.updateSettings(props.gameId, settings)
     toast.add({ title: '✅ Configuration sauvegardée', color: 'success' })
     emit('saved', { ...settings })
   }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import * as gameApi from '~/services/gameApi'
+
 /* --- States --- */
 const gameCode = ref('')
 const isCreating = ref(false)
@@ -11,9 +13,7 @@ async function createGame() {
   error.value = ''
 
   try {
-    const response = await $fetch('/api/game/create', {
-      method: 'POST'
-    })
+    const response = await gameApi.createGame()
 
     // Store created game info for cleanup if creator leaves without joining
     sessionStorage.setItem('createdGame', JSON.stringify({
@@ -41,11 +41,18 @@ function goToGame() {
 
 <template>
   <div class="min-h-screen bg-gradient-to-b from-violet-950/30 via-slate-950 to-slate-950 flex flex-col items-center justify-center p-6 overflow-hidden">
-    <!-- Background decorations -->
+    <!-- Enhanced Background Particles -->
+    <GamePhaseParticles phase="lobby" intensity="medium" />
+
+    <!-- Additional decorative elements -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div class="absolute -top-40 -left-40 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl animate-pulse" />
-      <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s" />
-      <div class="absolute top-1/4 right-1/4 w-64 h-64 bg-red-600/5 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s" />
+      <!-- Floating orbs -->
+      <div class="absolute -top-20 -left-20 w-64 h-64 bg-violet-600/15 rounded-full blur-3xl animate-float" style="animation-duration: 8s" />
+      <div class="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-600/15 rounded-full blur-3xl animate-float" style="animation-duration: 10s; animation-delay: 2s" />
+      <div class="absolute top-1/3 right-1/5 w-48 h-48 bg-red-600/10 rounded-full blur-3xl animate-float" style="animation-duration: 12s; animation-delay: 4s" />
+
+      <!-- Subtle grid pattern -->
+      <div class="absolute inset-0 opacity-[0.02]" style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 50px 50px" />
     </div>
 
     <!-- Content -->
@@ -67,7 +74,7 @@ function goToGame() {
           Mistairy
         </h1>
         <p class="text-neutral-400 mt-2">
-          Jouez sans cartes physiques
+          Jouez au jeu du Loup Garou sans cartes physiques et sans narrateur
         </p>
       </div>
 
@@ -178,17 +185,45 @@ function goToGame() {
         v-motion
         :initial="{ opacity: 0, y: 20 }"
         :enter="{ opacity: 1, y: 0, transition: { duration: 500, delay: 300 } }"
-        class="mt-10 text-center"
+        class="mt-12"
       >
-        <p class="text-neutral-600 text-sm">
-          5 à 18 joueurs
+        <!-- Player count badge -->
+        <div class="flex items-center justify-center gap-2 mb-4">
+          <div class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm">
+            <span class="text-sm">👥</span>
+            <span class="text-sm text-neutral-400">5 - 18 joueurs</span>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="flex items-center gap-4 my-4">
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          <span class="text-neutral-700 text-xs">MISTAIRY</span>
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        </div>
+
+        <!-- Links -->
+        <div class="flex items-center justify-center gap-4 text-xs">
+          <NuxtLink
+            to="/admin"
+            class="text-neutral-600 hover:text-violet-400 transition-colors"
+          >
+            Administration
+          </NuxtLink>
+          <span class="text-neutral-800">|</span>
+          <a
+            href="https://github.com"
+            target="_blank"
+            class="text-neutral-600 hover:text-violet-400 transition-colors"
+          >
+            GitHub
+          </a>
+        </div>
+
+        <!-- Version -->
+        <p class="text-neutral-800 text-[10px] mt-3 text-center">
+          v1.0.0
         </p>
-        <NuxtLink
-          to="/admin"
-          class="inline-block mt-3 text-xs text-neutral-700 hover:text-violet-400 transition-colors"
-        >
-          Administration
-        </NuxtLink>
       </div>
     </div>
   </div>

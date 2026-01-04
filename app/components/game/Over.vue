@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
 import { ROLES_CONFIG } from '#shared/config/roles.config'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -12,7 +13,17 @@ const props = defineProps<{
   currentPlayer: Player
 }>()
 
+/* --- Services --- */
+const toast = useToast()
+
+/* --- States --- */
+const isRestarting = ref(false)
+
 /* --- Computed --- */
+const isHost = computed(() =>
+  props.currentPlayer.is_host || props.game.host_id === props.currentPlayer.id
+)
+
 const isWinner = computed(() => {
   if (!props.currentPlayer.role || !props.game.winner) return false
 
@@ -29,6 +40,35 @@ const werewolves = computed(() =>
 const villagers = computed(() =>
   props.players.filter(p => p.role !== 'werewolf')
 )
+
+/* --- Methods --- */
+function shareLink() {
+  const baseUrl = `${window.location.origin}/game/${props.game.code}`
+  if (navigator.share) {
+    navigator.share({ title: `Mistairy - ${props.game.code}`, url: baseUrl })
+  }
+  else {
+    navigator.clipboard.writeText(baseUrl)
+    toast.add({ title: '🔗 Lien copié !', color: 'success' })
+  }
+}
+
+async function restart() {
+  if (isRestarting.value) return
+
+  isRestarting.value = true
+  try {
+    await gameApi.restartGame(props.game.id, props.currentPlayer.id)
+    toast.add({ title: '🔄 Partie relancée !', color: 'success' })
+  }
+  catch (e) {
+    console.error('Restart failed:', e)
+    toast.add({ title: 'Erreur lors du relancement', color: 'error' })
+  }
+  finally {
+    isRestarting.value = false
+  }
+}
 </script>
 
 <template>
@@ -105,14 +145,38 @@ const villagers = computed(() =>
       </div>
     </UCard>
 
-    <!-- Play again -->
-    <UButton
-      color="primary"
-      size="lg"
-      block
-      to="/"
-    >
-      Nouvelle partie
-    </UButton>
+    <!-- Actions (same as lobby) -->
+    <div class="flex flex-col gap-3">
+      <!-- Restart button (host only) -->
+      <button
+        v-if="isHost"
+        class="w-full px-4 py-4 rounded-xl font-bold text-lg transition-all"
+        :class="isRestarting
+          ? 'bg-neutral-700 text-neutral-400 cursor-wait'
+          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-500 hover:to-emerald-500 hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-green-500/20'"
+        :disabled="isRestarting"
+        @click="restart"
+      >
+        {{ isRestarting ? '...' : '🔄 Relancer la partie' }}
+      </button>
+
+      <!-- Other actions -->
+      <div class="flex gap-2 justify-center">
+        <button
+          class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+          @click="shareLink"
+        >
+          <span>🔗</span>
+          <span>Partager</span>
+        </button>
+        <NuxtLink
+          to="/"
+          class="flex-1 px-4 py-3 rounded-xl bg-violet-600 text-white hover:bg-violet-500 transition-colors flex items-center justify-center gap-2 font-bold"
+        >
+          <span>🎮</span>
+          <span>Nouvelle partie</span>
+        </NuxtLink>
+      </div>
+    </div>
   </div>
 </template>

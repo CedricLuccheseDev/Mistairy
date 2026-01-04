@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
+import type { Role } from '#shared/types/game'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -9,6 +12,7 @@ const props = defineProps<{
   game: Game
   currentPlayer: Player
   alivePlayers: Player[]
+  players: Player[] // All players for displaying dead ones
 }>()
 
 /* --- Services --- */
@@ -26,6 +30,22 @@ const totalAlive = computed(() => props.alivePlayers.length)
 const allReady = computed(() => readyCount.value >= totalAlive.value)
 const progressPercent = computed(() => Math.round((readyCount.value / totalAlive.value) * 100))
 
+// Dead players for display
+const deadPlayers = computed(() => props.players.filter(p => !p.is_alive))
+
+/* --- Helpers --- */
+function getPlayerIcon(player: Player): string {
+  // Show role icon for current player (always)
+  if (player.id === props.currentPlayer.id && player.role) {
+    return ROLES_CONFIG[player.role as Role]?.emoji || '👤'
+  }
+  // Show role icon for dead players (their role is revealed)
+  if (!player.is_alive && player.role) {
+    return ROLES_CONFIG[player.role as Role]?.emoji || '💀'
+  }
+  return '👤'
+}
+
 /* --- Methods --- */
 async function markReady() {
   if (isReady.value || isSubmitting.value) return
@@ -33,14 +53,7 @@ async function markReady() {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/ready', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id
-      }
-    })
-
+    await gameApi.setReady(props.game.id, props.currentPlayer.id)
     isReady.value = true
     toast.add({ title: '✅ Prêt à voter', color: 'success' })
   }
@@ -109,9 +122,6 @@ watch(() => props.game.day_number, () => {
 
 <template>
   <div class="flex-1 flex flex-col relative min-h-0 overflow-visible">
-    <!-- Background particles -->
-    <GamePhaseParticles phase="day" intensity="medium" />
-
     <!-- Radial glow -->
     <div class="absolute inset-0 bg-gradient-radial from-amber-500/15 via-transparent to-transparent pointer-events-none" />
 
@@ -141,6 +151,13 @@ watch(() => props.game.day_number, () => {
         <p class="text-lg sm:text-xl text-white/60">
           {{ currentPlayer.is_alive ? 'Débattez et trouvez les loups' : 'Tu observes depuis l\'au-delà...' }}
         </p>
+
+        <!-- Narration text -->
+        <div v-if="game.narration_text" class="mt-4 mx-auto max-w-md">
+          <p class="text-sm text-white/50 italic text-center leading-relaxed">
+            "{{ game.narration_text }}"
+          </p>
+        </div>
       </div>
 
       <!-- Content -->
@@ -203,6 +220,7 @@ watch(() => props.game.day_number, () => {
 
           <!-- Players grid with ready status -->
           <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-6">
+            <!-- Alive players -->
             <div
               v-for="(player, index) in alivePlayers"
               :key="player.id"
@@ -233,7 +251,7 @@ watch(() => props.game.day_number, () => {
                   class="w-12 h-12 rounded-full flex items-center justify-center mb-2 transition-all duration-300"
                   :class="isPlayerReady(player.id) ? 'bg-green-500/20' : 'bg-white/10'"
                 >
-                  <span class="text-2xl">{{ isPlayerReady(player.id) ? '✅' : '👤' }}</span>
+                  <span class="text-2xl">{{ isPlayerReady(player.id) ? '✅' : getPlayerIcon(player) }}</span>
                 </div>
 
                 <!-- Name -->
@@ -244,6 +262,40 @@ watch(() => props.game.day_number, () => {
                     isPlayerReady(player.id) && 'text-green-400'
                   ]"
                 >
+                  {{ player.name }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Dead players -->
+            <div
+              v-for="(player, index) in deadPlayers"
+              :key="player.id"
+              :style="{ animationDelay: `${(alivePlayers.length + index) * 50}ms` }"
+              class="animate-slide-up-stagger"
+            >
+              <div
+                class="relative flex flex-col items-center p-3 rounded-2xl border-2 transition-all duration-300 bg-neutral-900/50 border-neutral-700/30 opacity-70"
+              >
+                <!-- Death indicator -->
+                <div class="absolute -top-2 -right-2 w-5 h-5 bg-neutral-900 rounded-full flex items-center justify-center shadow-lg border border-neutral-700">
+                  <span class="text-[10px]">💀</span>
+                </div>
+
+                <!-- Avatar with role icon (colored, not grayscale) -->
+                <div
+                  class="w-12 h-12 rounded-full flex items-center justify-center mb-2"
+                  :class="[
+                    player.role && ROLES_CONFIG[player.role as Role]?.team === 'werewolf'
+                      ? 'bg-red-900/50 border border-red-500/30'
+                      : 'bg-violet-900/50 border border-violet-500/30'
+                  ]"
+                >
+                  <span class="text-2xl">{{ getPlayerIcon(player) }}</span>
+                </div>
+
+                <!-- Name -->
+                <p class="text-xs font-medium truncate w-full text-center text-neutral-400 line-through">
                   {{ player.name }}
                 </p>
               </div>

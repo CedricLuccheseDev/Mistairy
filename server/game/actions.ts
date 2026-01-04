@@ -33,7 +33,8 @@ async function advanceNightRoleIfNeeded(
   client: SupabaseClient<Database>,
   game: Game,
   players: Player[],
-  actionType: NightActionType
+  actionType: NightActionType,
+  geminiApiKey?: string
 ): Promise<{ advanced: boolean; nightComplete: boolean }> {
   const actions = await db.getNightActions(client, game.id, game.day_number)
   const alive = players.filter(p => p.is_alive)
@@ -62,18 +63,15 @@ async function advanceNightRoleIfNeeded(
   const nightComplete = await engine.hasNightEnded(client, game.id, game.day_number, players)
 
   if (nightComplete) {
-    await engine.transitionToDay(client, game, players)
+    await engine.transitionToDay(client, game, players, geminiApiKey)
     return { advanced: true, nightComplete: true }
   }
 
-  // Advance to next role
+  // Advance to next role using shared helper
   const nextRole = engine.getNextNightRole(game.current_night_role, players)
 
   if (nextRole) {
-    await client.from('games').update({
-      current_night_role: nextRole,
-      phase_end_at: engine.getPhaseEndTime(settings, 'night').toISOString()
-    }).eq('id', game.id)
+    await engine.updateToNextNightRole(client, game.id, nextRole, settings)
   }
 
   return { advanced: true, nightComplete: false }
@@ -87,7 +85,8 @@ export async function submitVote(
   client: SupabaseClient<Database>,
   game: Game,
   voter: Player,
-  targetId: string
+  targetId: string,
+  geminiApiKey?: string
 ): Promise<ActionResult> {
   // Validation
   if (game.status !== 'vote') return fail('Pas de vote en cours')
@@ -113,14 +112,15 @@ export async function submitVote(
   })
 
   // Check if voting is complete
-  const result = await checkAndResolveVotes(client, game)
+  const result = await checkAndResolveVotes(client, game, geminiApiKey)
 
   return ok(result ? { resolved: true, ...result } : { resolved: false })
 }
 
 export async function checkAndResolveVotes(
   client: SupabaseClient<Database>,
-  game: Game
+  game: Game,
+  geminiApiKey?: string
 ): Promise<{ eliminated: string | null; nextPhase: string } | null> {
   const players = await db.getPlayers(client, game.id)
   const alive = players.filter(p => p.is_alive)
@@ -135,40 +135,26 @@ export async function checkAndResolveVotes(
 
   // Create result event
   const eliminated = targetId ? players.find(p => p.id === targetId) : null
-  const message = isTie
-    ? 'Égalité ! Personne n\'est éliminé.'
-    : eliminated
-      ? `${eliminated.name} a été éliminé par le village !`
-      : 'Aucun vote. Personne n\'est éliminé.'
+  const message = eliminated
+    ? isTie
+      ? `Égalité ! Le sort désigne ${eliminated.name} qui est éliminé !`
+      : `${eliminated.name} a été éliminé par le village !`
+    : 'Aucun vote. Personne n\'est éliminé.'
 
   await db.createGameEvent(client, game.id, 'vote_result', message, {
     eliminated: eliminated?.id || null,
     isTie
   })
 
-  // Handle elimination
-  if (eliminated && !isTie) {
+  // Handle elimination (now also happens on tie since we pick randomly)
+  if (eliminated) {
     await db.killPlayer(client, eliminated.id)
-
-    // Hunter check
-    if (eliminated.role === 'hunter') {
-      await engine.transitionToHunter(client, game.id, eliminated)
-      return { eliminated: eliminated.id, nextPhase: 'hunter' }
-    }
   }
 
-  // Check victory
-  const updated = await db.getPlayers(client, game.id)
-  const winner = engine.checkVictory(updated)
-
-  if (winner) {
-    await engine.endGame(client, game.id, winner)
-    return { eliminated: eliminated?.id || null, nextPhase: 'finished' }
-  }
-
-  // Transition to night
-  await engine.transitionToNight(client, game)
-  return { eliminated: eliminated?.id || null, nextPhase: 'night' }
+  // Transition to vote_result (10 seconds to display who died)
+  // Hunter check and victory check will be done when vote_result ends
+  await engine.transitionToVoteResult(client, game, eliminated || null, isTie, geminiApiKey)
+  return { eliminated: eliminated?.id || null, nextPhase: 'vote_result' }
 }
 
 /* ═══════════════════════════════════════════
@@ -180,7 +166,8 @@ export async function submitNightAction(
   game: Game,
   player: Player,
   actionType: NightActionType,
-  targetId: string | null
+  targetId: string | null,
+  geminiApiKey?: string
 ): Promise<ActionResult> {
   // Validation
   if (game.status !== 'night') return fail('Ce n\'est pas la nuit')
@@ -243,7 +230,7 @@ export async function submitNightAction(
   }
   else {
     // Other roles: advance immediately
-    await advanceNightRoleIfNeeded(client, game, players, actionType)
+    await advanceNightRoleIfNeeded(client, game, players, actionType, geminiApiKey)
   }
 
   return ok({
@@ -260,7 +247,8 @@ export async function submitHunterAction(
   client: SupabaseClient<Database>,
   game: Game,
   hunter: Player,
-  targetId: string
+  targetId: string,
+  geminiApiKey?: string
 ): Promise<ActionResult> {
   // Validation
   if (game.status !== 'hunter') return fail('Ce n\'est pas la phase du chasseur')
@@ -281,7 +269,7 @@ export async function submitHunterAction(
 
   // Chain reaction: if target was also hunter (edge case)
   if (target.data.role === 'hunter') {
-    await engine.transitionToHunter(client, game.id, target.data as Player)
+    await engine.transitionToHunter(client, game.id, target.data as Player, undefined, geminiApiKey)
     return ok({ chainHunter: true, targetName: target.data.name })
   }
 
@@ -290,25 +278,12 @@ export async function submitHunterAction(
   const winner = engine.checkVictory(players)
 
   if (winner) {
-    await engine.endGame(client, game.id, winner)
+    await engine.endGame(client, game.id, winner, undefined, geminiApiKey)
     return ok({ winner, targetName: target.data.name })
   }
 
-  // Transition to night
-  const settings = (game.settings as unknown as GameSettings) || engine.getDefaultSettings()
-  const firstNightRole = engine.getFirstNightRole(players)
+  // Transition based on where hunter died (night → day_intro, vote → night_intro)
+  const result = await engine.transitionAfterHunter(client, game, target.data.name, geminiApiKey)
 
-  await client.from('games').update({
-    status: 'night',
-    day_number: game.day_number + 1,
-    phase_end_at: engine.getPhaseEndTime(settings, 'night').toISOString(),
-    hunter_target_pending: null,
-    current_night_role: firstNightRole
-  }).eq('id', game.id)
-
-  await db.createGameEvent(client, game.id, 'night_start',
-    `Nuit ${game.day_number + 1} - Le village s'endort après cette tragédie.`,
-    { day_number: game.day_number + 1 })
-
-  return ok({ targetName: target.data.name, nextPhase: 'night' })
+  return ok({ targetName: target.data.name, nextPhase: result.nextPhase })
 }

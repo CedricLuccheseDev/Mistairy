@@ -27,7 +27,7 @@ export type Database = {
         Row: {
           id: string
           code: string
-          status: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status: 'lobby' | 'night_intro' | 'night' | 'day_intro' | 'day' | 'vote' | 'vote_result' | 'hunter' | 'finished'
           phase_end_at: string | null
           day_number: number
           winner: 'village' | 'werewolf' | null
@@ -35,12 +35,14 @@ export type Database = {
           created_at: string
           host_id: string | null
           hunter_target_pending: string | null
+          hunter_died_at: 'night' | 'vote' | null
           current_night_role: 'seer' | 'werewolf' | 'witch' | null
+          narration_text: string | null
         }
         Insert: {
           id?: string
           code: string
-          status?: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status?: 'lobby' | 'night_intro' | 'night' | 'day_intro' | 'day' | 'vote' | 'vote_result' | 'hunter' | 'finished'
           phase_end_at?: string | null
           day_number?: number
           winner?: 'village' | 'werewolf' | null
@@ -48,12 +50,14 @@ export type Database = {
           created_at?: string
           host_id?: string | null
           hunter_target_pending?: string | null
+          hunter_died_at?: 'night' | 'vote' | null
           current_night_role?: 'seer' | 'werewolf' | 'witch' | null
+          narration_text?: string | null
         }
         Update: {
           id?: string
           code?: string
-          status?: 'lobby' | 'intro' | 'night' | 'day' | 'vote' | 'hunter' | 'finished'
+          status?: 'lobby' | 'night_intro' | 'night' | 'day_intro' | 'day' | 'vote' | 'vote_result' | 'hunter' | 'finished'
           phase_end_at?: string | null
           day_number?: number
           winner?: 'village' | 'werewolf' | null
@@ -61,7 +65,9 @@ export type Database = {
           created_at?: string
           host_id?: string | null
           hunter_target_pending?: string | null
+          hunter_died_at?: 'night' | 'vote' | null
           current_night_role?: 'seer' | 'werewolf' | 'witch' | null
+          narration_text?: string | null
         }
         Relationships: [
           {

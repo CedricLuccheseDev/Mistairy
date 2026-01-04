@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS games CASCADE;
 CREATE TABLE games (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code VARCHAR(6) UNIQUE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'intro', 'night', 'day', 'vote', 'hunter', 'finished')),
+  status VARCHAR(20) NOT NULL DEFAULT 'lobby' CHECK (status IN ('lobby', 'night_intro', 'night', 'day_intro', 'day', 'vote', 'vote_result', 'hunter', 'finished')),
   phase_end_at TIMESTAMPTZ,
   day_number INTEGER NOT NULL DEFAULT 0,
   winner VARCHAR(20) CHECK (winner IN ('village', 'werewolf')),
@@ -18,7 +18,9 @@ CREATE TABLE games (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   host_id UUID,
   hunter_target_pending UUID,
-  current_night_role VARCHAR(20) CHECK (current_night_role IN ('seer', 'werewolf', 'witch'))
+  hunter_died_at VARCHAR(10) CHECK (hunter_died_at IN ('night', 'vote')),
+  current_night_role VARCHAR(20) CHECK (current_night_role IN ('seer', 'werewolf', 'witch')),
+  narration_text TEXT
 );
 
 -- Players table

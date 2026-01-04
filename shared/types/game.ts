@@ -3,14 +3,19 @@ import type { GameSettings } from './database.types'
 // Game status enum
 export const GameStatus = {
   Lobby: 'lobby',
-  Intro: 'intro',
+  NightIntro: 'night_intro',
   Night: 'night',
+  DayIntro: 'day_intro',
   Day: 'day',
   Vote: 'vote',
+  VoteResult: 'vote_result',
   Hunter: 'hunter',
   Finished: 'finished'
 } as const
 export type GameStatus = typeof GameStatus[keyof typeof GameStatus]
+
+// Hunter death context (where did hunter die)
+export type HunterDiedAt = 'night' | 'vote' | null
 
 // Role enum
 export const Role = {
@@ -54,8 +59,10 @@ export interface Game {
   created_at: string
   host_id: string | null
   settings: GameSettings
-  hunter_target_pending?: string | null
-  current_night_role?: NightRole | null
+  hunter_target_pending: string | null
+  hunter_died_at: HunterDiedAt
+  current_night_role: NightRole | null
+  narration_text: string | null
 }
 
 export interface Player {
@@ -65,8 +72,8 @@ export interface Player {
   role: Role | null
   is_alive: boolean
   is_host: boolean
-  witch_heal_used?: boolean
-  witch_kill_used?: boolean
+  witch_heal_used: boolean
+  witch_kill_used: boolean
   created_at: string
   user_token?: string
 }

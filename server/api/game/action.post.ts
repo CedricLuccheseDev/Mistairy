@@ -12,6 +12,8 @@ import type { NightActionType } from '../../../shared/types/game'
 type ActionType = 'vote' | NightActionType
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig()
+  const geminiApiKey = config.geminiApiKey as string | undefined
   const body = await readBody(event)
   const { gameId, playerId, actionType, targetId } = body as {
     gameId: string
@@ -56,7 +58,7 @@ export default defineEventHandler(async (event) => {
       if (!targetId) {
         throw createError({ statusCode: 400, message: 'targetId requis pour le vote' })
       }
-      result = await submitVote(client, game, player, targetId)
+      result = await submitVote(client, game, player, targetId, geminiApiKey)
       if (result.success) {
         logger.vote.cast(game.code, player.name, targetId)
       }
@@ -66,7 +68,7 @@ export default defineEventHandler(async (event) => {
       if (!targetId) {
         throw createError({ statusCode: 400, message: 'targetId requis pour le chasseur' })
       }
-      result = await submitHunterAction(client, game, player, targetId)
+      result = await submitHunterAction(client, game, player, targetId, geminiApiKey)
       if (result.success) {
         logger.night.action(game.code, player.name, 'hunter_kill', result.data?.targetName as string)
       }
@@ -74,7 +76,7 @@ export default defineEventHandler(async (event) => {
 
     case 'hunter_skip':
       // Hunter chooses not to shoot - just mark action as done
-      result = await submitNightAction(client, game, player, 'hunter_skip', null)
+      result = await submitNightAction(client, game, player, 'hunter_skip', null, geminiApiKey)
       if (result.success) {
         logger.night.action(game.code, player.name, 'hunter_skip', 'none')
       }
@@ -82,7 +84,7 @@ export default defineEventHandler(async (event) => {
 
     default:
       // Night actions: werewolf_kill, seer_view, witch_save, witch_kill, witch_skip
-      result = await submitNightAction(client, game, player, actionType, targetId || null)
+      result = await submitNightAction(client, game, player, actionType, targetId || null, geminiApiKey)
       if (result.success) {
         logger.night.action(game.code, player.name, actionType, targetId || 'none')
       }

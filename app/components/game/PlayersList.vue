@@ -120,21 +120,36 @@ function getRoleColor(role: string): string {
         >
           <!-- Dead player card -->
           <div
-            class="p-2 rounded-lg border border-neutral-800 bg-neutral-900/50 opacity-60"
+            class="p-2 rounded-lg border border-neutral-800 bg-neutral-900/50 opacity-70"
           >
             <div class="flex items-center gap-2">
-              <!-- Skull avatar -->
-              <div class="w-8 h-8 rounded-lg bg-neutral-800 flex items-center justify-center text-lg">
-                💀
+              <!-- Role avatar with skull overlay -->
+              <div class="relative">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center text-lg"
+                  :class="[
+                    player.role
+                      ? getRoleColor(player.role) === 'red'
+                        ? 'bg-red-900/50 border border-red-500/30'
+                        : 'bg-violet-900/50 border border-violet-500/30'
+                      : 'bg-neutral-800'
+                  ]"
+                >
+                  {{ player.role ? getRoleEmoji(player.role) : '👤' }}
+                </div>
+                <!-- Small skull badge -->
+                <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-neutral-900 rounded-full flex items-center justify-center text-[10px] border border-neutral-700">
+                  💀
+                </div>
               </div>
 
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-neutral-400 truncate line-through">
                   {{ player.name }}
                 </p>
-                <!-- Role reveal for dead players -->
+                <!-- Role name for dead players -->
                 <span
-                  v-if="showRoles && player.role"
+                  v-if="player.role"
                   class="text-xs"
                   :class="getRoleColor(player.role) === 'red' ? 'text-red-500/70' : 'text-violet-500/70'"
                 >

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -36,15 +37,7 @@ async function selectAndShoot(player: Player) {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'hunter_kill',
-        targetId: player.id
-      }
-    })
+    await gameApi.submitHunterAction(props.game.id, props.currentPlayer.id, player.id)
     toast.add({ title: `🔫 ${player.name} a été abattu`, color: 'error' })
     hasActed.value = true
   }
@@ -63,14 +56,7 @@ async function skipShot() {
 
   isSubmitting.value = true
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'hunter_skip'
-      }
-    })
+    await gameApi.skipHunterAction(props.game.id, props.currentPlayer.id)
     toast.add({ title: '😴 Tu passes ton tir', color: 'info' })
     hasActed.value = true
   }
@@ -141,6 +127,7 @@ async function skipShot() {
               :disabled="isSubmitting"
               :loading="isSubmitting"
               :selected-id="selectedId"
+              :current-player="currentPlayer"
               color="red"
               @select="selectAndShoot"
             />

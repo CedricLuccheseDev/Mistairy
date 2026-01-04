@@ -30,6 +30,9 @@ export {
   transitionToVote,
   transitionToNight,
   transitionToHunter,
+  transitionAfterHunter,
+  startDayDebate,
+  startNightPhase,
   endGame
 } from './engine'
 export type { TransitionResult } from './engine'
@@ -50,7 +53,8 @@ export {
   leaveGame,
   setPlayerReady,
   startGame,
-  startNight
+  startNight,
+  restartGame
 } from './lobby'
 export type {
   CreateGameResult,
@@ -58,7 +62,8 @@ export type {
   LeaveGameResult,
   ReadyResult,
   StartGameResult,
-  StartNightResult
+  StartNightResult,
+  RestartGameResult
 } from './lobby'
 
 // Re-export utilities from config

@@ -26,7 +26,7 @@ Mistairy/
 │   ├── game/            # Game logic helpers (phases, night, vote, etc.)
 │   └── utils/           # Server utilities
 ├── supabase/
-│   └── migrations/      # SQL migrations
+│   └── migrations/      # SQL migrations (single file: 001_initial_schema.sql)
 ├── tests/               # Test files
 └── public/              # Static assets
 ```
@@ -197,6 +197,15 @@ npm run dev
 
 # Open multiple browser tabs to simulate players
 ```
+
+## Database Modifications
+
+**IMPORTANT:** All database schema changes must be made in `supabase/migrations/001_initial_schema.sql`. Do NOT create additional migration files. This single file is the source of truth for the database schema.
+
+When modifying the schema:
+1. Edit `001_initial_schema.sql` directly
+2. Update `shared/types/database.types.ts` to match
+3. Reset local database: `npx supabase db reset`
 
 ## Environment Variables
 

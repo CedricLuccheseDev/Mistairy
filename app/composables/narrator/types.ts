@@ -49,4 +49,4 @@ export interface TTSResponse {
 // Voice types: 'story' for atmospheric narration, 'event' for game announcements
 export type VoiceType = 'story' | 'event'
 
-export type AmbientSound = 'night' | 'day' | 'vote' | 'death' | 'victory' | 'defeat' | 'suspense' | 'transition'
+export type AmbientSound = 'night' | 'day' | 'vote' | 'death' | 'victory' | 'defeat' | 'suspense' | 'transition' | 'witch' | 'seer' | 'werewolves' | 'hunter' | 'happy' | 'sad'

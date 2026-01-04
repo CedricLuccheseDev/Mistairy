@@ -25,37 +25,18 @@ const formattedTime = computed(() => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 })
 
-const formattedTotalTime = computed(() => {
-  const minutes = Math.floor(totalTime.value / 60)
-  const seconds = totalTime.value % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-})
-
 const isUrgent = computed(() => timeLeft.value <= 10 && timeLeft.value > 0)
 const isCritical = computed(() => timeLeft.value <= 3 && timeLeft.value > 0)
 
-const barColor = computed(() => {
-  if (isCritical.value) return 'bg-red-500'
-  if (isUrgent.value) return 'bg-orange-500'
+const strokeColor = computed(() => {
+  if (isCritical.value) return '#ef4444'
+  if (isUrgent.value) return '#f97316'
 
   const colors = {
-    indigo: 'bg-indigo-500',
-    amber: 'bg-amber-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500'
-  }
-  return colors[props.phaseColor || 'indigo']
-})
-
-const bgColor = computed(() => {
-  if (isCritical.value) return 'bg-red-950/50'
-  if (isUrgent.value) return 'bg-orange-950/50'
-
-  const colors = {
-    indigo: 'bg-indigo-950/30',
-    amber: 'bg-amber-950/30',
-    orange: 'bg-orange-950/30',
-    red: 'bg-red-950/30'
+    indigo: '#6366f1',
+    amber: '#f59e0b',
+    orange: '#f97316',
+    red: '#ef4444'
   }
   return colors[props.phaseColor || 'indigo']
 })
@@ -63,7 +44,6 @@ const bgColor = computed(() => {
 /* --- Methods --- */
 function updateTimer() {
   if (!props.endAt) {
-    // No timer set yet - show full bar in waiting state
     if (!initialized.value) {
       totalTime.value = props.totalDuration || 60
       timeLeft.value = totalTime.value
@@ -75,7 +55,6 @@ function updateTimer() {
   const now = Date.now()
   const diff = Math.max(0, Math.floor((end - now) / 1000))
 
-  // Initialize totalTime when timer starts
   if (!initialized.value && diff > 0) {
     totalTime.value = props.totalDuration || diff
     initialized.value = true
@@ -96,7 +75,6 @@ onUnmounted(() => {
 
 /* --- Watchers --- */
 watch(() => props.endAt, (newVal, oldVal) => {
-  // Reset when phase changes (new timer)
   if (newVal !== oldVal) {
     initialized.value = false
   }
@@ -113,45 +91,49 @@ watch(() => props.totalDuration, () => {
 
 <template>
   <div class="w-full">
-    <!-- Timer bar container -->
+    <!-- Progress bar container -->
     <div
-      class="relative h-8 rounded-full overflow-hidden transition-all duration-300"
+      class="relative h-7 rounded-full overflow-hidden backdrop-blur-sm border transition-all duration-300"
       :class="[
-        bgColor,
-        isCritical && 'animate-pulse ring-2 ring-red-500'
+        isCritical ? 'bg-red-950/50 border-red-500/50' : 'bg-white/5 border-white/10'
       ]"
     >
-      <!-- Progress bar -->
+      <!-- Glow effect behind progress -->
       <div
-        class="absolute inset-y-0 left-0 transition-all duration-1000 ease-linear rounded-full"
-        :class="barColor"
-        :style="{ width: `${progress}%` }"
+        class="absolute inset-y-0 left-0 rounded-full blur-sm transition-all duration-1000 ease-linear"
+        :style="{
+          width: `${progress}%`,
+          backgroundColor: strokeColor,
+          opacity: 0.3
+        }"
       />
 
-      <!-- Time text -->
+      <!-- Progress bar -->
+      <div
+        class="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-linear"
+        :style="{
+          width: `${progress}%`,
+          background: `linear-gradient(90deg, ${strokeColor}dd, ${strokeColor})`
+        }"
+      />
+
+      <!-- Time text centered -->
       <div class="absolute inset-0 flex items-center justify-center">
         <span
-          class="font-mono font-bold text-sm"
+          class="font-mono font-bold text-xs tabular-nums drop-shadow-sm"
           :class="[
-            isCritical ? 'text-red-100 animate-pulse' : 'text-white',
-            isUrgent && !isCritical && 'text-orange-100'
+            isCritical ? 'text-red-100' : 'text-white'
           ]"
         >
-          {{ formattedTime }} <span class="text-white/50 font-normal">/ {{ formattedTotalTime }}</span>
+          {{ formattedTime }}
         </span>
       </div>
-    </div>
 
-    <!-- Critical alert -->
-    <Transition name="fade">
+      <!-- Shine effect -->
       <div
-        v-if="isCritical"
-        class="mt-2 text-center animate-pulse"
-      >
-        <span class="text-xs font-medium text-red-400 uppercase tracking-wider">
-          ⚠️ Temps presque écoulé !
-        </span>
-      </div>
-    </Transition>
+        class="absolute inset-y-0 left-0 w-full rounded-full opacity-20"
+        style="background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 50%)"
+      />
+    </div>
   </div>
 </template>

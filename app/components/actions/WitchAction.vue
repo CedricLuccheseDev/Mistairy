@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -97,16 +98,7 @@ async function saveVictim() {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'witch_save',
-        targetId: wolfVictim.value.id
-      }
-    })
-
+    await gameApi.submitNightAction(props.game.id, props.currentPlayer.id, 'witch_save', wolfVictim.value.id)
     toast.add({ title: `💚 ${wolfVictim.value.name} sera sauvé !`, color: 'success' })
     emit('actionDone')
   }
@@ -126,16 +118,7 @@ async function selectTarget(player: Player) {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'witch_kill',
-        targetId: player.id
-      }
-    })
-
+    await gameApi.submitNightAction(props.game.id, props.currentPlayer.id, 'witch_kill', player.id)
     toast.add({ title: `💀 ${player.name} sera empoisonné`, color: 'success' })
     emit('actionDone')
   }
@@ -153,15 +136,7 @@ async function skipAction() {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'witch_skip'
-      }
-    })
-
+    await gameApi.submitNightAction(props.game.id, props.currentPlayer.id, 'witch_skip')
     toast.add({ title: '😴 Tu passes ton tour', color: 'info' })
     emit('actionDone')
   }
@@ -275,6 +250,7 @@ function selectKillPotion() {
             :disabled="isSubmitting"
             :loading="isSubmitting"
             :selected-id="selectedId"
+            :current-player="currentPlayer"
             :color="gridColor"
             @select="selectTarget"
           />

@@ -457,6 +457,14 @@ export function useNarrator() {
     playDefeat: () => playSoundEffect('defeat'),
     playSuspense: () => playSoundEffect('suspense'),
     playTransition: () => playSoundEffect('transition'),
+    // Role-specific sounds
+    playWitch: () => playSoundEffect('witch'),
+    playSeer: () => playSoundEffect('seer'),
+    playWerewolves: () => playSoundEffect('werewolves'),
+    playHunter: () => playSoundEffect('hunter'),
+    // Day phase mood sounds
+    playHappy: () => playSoundEffect('happy'),
+    playSad: () => playSoundEffect('sad'),
     stop: () => stopAmbient(true)
   }
 

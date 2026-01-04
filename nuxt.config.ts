@@ -9,6 +9,7 @@ export default defineNuxtConfig({
     '#shared': '../shared'
   },
 
+
   runtimeConfig: {
     supabaseServiceKey: process.env.SUPABASE_SECRET_KEY,
     geminiApiKey: process.env.GEMINI_API_KEY,

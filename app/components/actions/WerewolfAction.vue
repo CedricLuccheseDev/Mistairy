@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -32,16 +33,7 @@ async function selectTarget(player: Player) {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'werewolf_kill',
-        targetId: player.id
-      }
-    })
-
+    await gameApi.submitNightAction(props.game.id, props.currentPlayer.id, 'werewolf_kill', player.id)
     toast.add({ title: `🩸 ${player.name} sera dévoré`, color: 'success' })
     emit('actionDone')
   }
@@ -63,6 +55,8 @@ async function selectTarget(player: Player) {
       :disabled="isSubmitting"
       :loading="isSubmitting"
       :selected-id="selectedId"
+      :current-player="currentPlayer"
+      :recognized-player-ids="otherWerewolves.map(w => w.id)"
       color="red"
       @select="selectTarget"
     />

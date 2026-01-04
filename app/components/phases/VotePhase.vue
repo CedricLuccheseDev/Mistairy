@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { Database } from '#shared/types/database.types'
+import { ROLES_CONFIG } from '#shared/config/roles.config'
+import type { Role } from '#shared/types/game'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -9,6 +12,7 @@ const props = defineProps<{
   game: Game
   currentPlayer: Player
   alivePlayers: Player[]
+  players: Player[] // All players for displaying dead ones
 }>()
 
 /* --- Services --- */
@@ -24,6 +28,22 @@ const targets = computed(() =>
   props.alivePlayers.filter(p => p.id !== props.currentPlayer.id)
 )
 
+// Dead players for display
+const deadPlayers = computed(() => props.players.filter(p => !p.is_alive))
+
+/* --- Helpers --- */
+function getPlayerIcon(player: Player): string {
+  // Show role icon for current player (always)
+  if (player.id === props.currentPlayer.id && player.role) {
+    return ROLES_CONFIG[player.role as Role]?.emoji || '👤'
+  }
+  // Show role icon for dead players (their role is revealed)
+  if (!player.is_alive && player.role) {
+    return ROLES_CONFIG[player.role as Role]?.emoji || '💀'
+  }
+  return '👤'
+}
+
 /* --- Methods --- */
 async function selectAndVote(player: Player) {
   if (hasVoted.value || isSubmitting.value) return
@@ -32,16 +52,7 @@ async function selectAndVote(player: Player) {
   isSubmitting.value = true
 
   try {
-    await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'vote',
-        targetId: player.id
-      }
-    })
-
+    await gameApi.submitVote(props.game.id, props.currentPlayer.id, player.id)
     toast.add({ title: `🗳️ Vote contre ${player.name}`, color: 'success' })
     hasVoted.value = true
   }
@@ -58,9 +69,6 @@ async function selectAndVote(player: Player) {
 
 <template>
   <div class="flex-1 flex flex-col relative min-h-0 overflow-visible">
-    <!-- Background particles -->
-    <GamePhaseParticles phase="vote" intensity="high" />
-
     <!-- All background effects teleported to body to avoid clipping -->
     <Teleport to="body">
       <!-- Urgency background pulse -->
@@ -94,6 +102,13 @@ async function selectAndVote(player: Player) {
         <p class="text-lg sm:text-xl text-white/60">
           {{ currentPlayer.is_alive ? 'Qui est le loup-garou ?' : 'Tu observes depuis l\'au-delà...' }}
         </p>
+
+        <!-- Narration text -->
+        <div v-if="game.narration_text" class="mt-4 mx-auto max-w-md">
+          <p class="text-sm text-white/50 italic text-center leading-relaxed">
+            "{{ game.narration_text }}"
+          </p>
+        </div>
       </div>
 
       <!-- Content -->
@@ -115,9 +130,37 @@ async function selectAndVote(player: Player) {
               :disabled="isSubmitting"
               :loading="isSubmitting"
               :selected-id="selectedId"
+              :current-player="currentPlayer"
               color="orange"
               @select="selectAndVote"
             />
+
+            <!-- Dead players section -->
+            <div v-if="deadPlayers.length > 0" class="mt-6 pt-4 border-t border-white/10">
+              <p class="text-sm text-white/40 mb-3 text-center">Éliminés</p>
+              <div class="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                <div
+                  v-for="player in deadPlayers"
+                  :key="player.id"
+                  class="flex flex-col items-center p-2 rounded-xl bg-neutral-900/50 border border-neutral-700/30 opacity-70"
+                >
+                  <div
+                    class="w-10 h-10 rounded-full flex items-center justify-center mb-1 relative"
+                    :class="[
+                      player.role && ROLES_CONFIG[player.role as Role]?.team === 'werewolf'
+                        ? 'bg-red-900/50 border border-red-500/30'
+                        : 'bg-violet-900/50 border border-violet-500/30'
+                    ]"
+                  >
+                    <span class="text-xl">{{ getPlayerIcon(player) }}</span>
+                    <span class="absolute -top-1 -right-1 text-[10px] bg-neutral-900 rounded-full w-4 h-4 flex items-center justify-center border border-neutral-700">💀</span>
+                  </div>
+                  <p class="text-xs text-neutral-400 truncate w-full text-center line-through">
+                    {{ player.name }}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </template>
 

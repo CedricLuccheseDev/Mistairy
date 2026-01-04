@@ -2,6 +2,7 @@
 import type { Database } from '#shared/types/database.types'
 import { ROLES_CONFIG } from '#shared/config/roles.config'
 import type { Role } from '#shared/types/game'
+import * as gameApi from '~/services/gameApi'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -33,17 +34,8 @@ async function selectTarget(player: Player) {
   isSubmitting.value = true
 
   try {
-    const response = await $fetch('/api/game/action', {
-      method: 'POST',
-      body: {
-        gameId: props.game.id,
-        playerId: props.currentPlayer.id,
-        actionType: 'seer_view',
-        targetId: player.id
-      }
-    })
-
-    if ('revealedRole' in response && response.revealedRole) {
+    const response = await gameApi.submitNightAction(props.game.id, props.currentPlayer.id, 'seer_view', player.id)
+    if (response.revealedRole) {
       const revealedRole = response.revealedRole as Role
       const roleInfo = ROLES_CONFIG[revealedRole]
 
@@ -74,6 +66,7 @@ async function selectTarget(player: Player) {
       :disabled="isSubmitting"
       :loading="isSubmitting"
       :selected-id="selectedId"
+      :current-player="currentPlayer"
       color="violet"
       @select="selectTarget"
     />

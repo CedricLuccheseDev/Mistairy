@@ -17,10 +17,6 @@ const props = defineProps<{
 /* --- States --- */
 const hasActed = ref(false)
 const seerResult = ref<{ name: string; role: string; emoji: string } | null>(null)
-const lastNarratedRole = ref<string | null>(null)
-
-/* --- Services --- */
-const { narrate } = useNarrator()
 
 /* --- Computed --- */
 // Use game.current_night_role directly from the server
@@ -48,12 +44,11 @@ const showActionUI = computed(() => canAct.value && isMyTurn.value && !hasActed.
 // Get role UI config from centralized source
 const config = computed(() => getNightRoleUI(currentActiveRole.value))
 
+// Simplified wait message - only show if player is dead or has acted
 const waitMessage = computed(() => {
   if (!props.currentPlayer.is_alive) return { icon: '💀', title: 'Éliminé', subtitle: 'Tu observes depuis l\'au-delà...' }
-  if (props.currentPlayer.role === 'villager') return { icon: '😴', title: 'Tu dors', subtitle: 'Le village se repose...' }
-  if (props.currentPlayer.role === 'hunter') return { icon: '🏹', title: 'Chasseur', subtitle: 'Pas d\'action de nuit' }
   if (hasActed.value) return { icon: '✓', title: 'Action faite', subtitle: 'Attends les autres...' }
-  return { icon: '⏳', title: 'Patiente', subtitle: 'Ce n\'est pas ton tour' }
+  return null // No message needed - role header already shows what's happening
 })
 
 /* --- Watchers --- */
@@ -61,26 +56,7 @@ const waitMessage = computed(() => {
 watch(() => props.game.day_number, () => {
   hasActed.value = false
   seerResult.value = null
-  lastNarratedRole.value = null
 })
-
-// Narrate when role changes
-watch(currentActiveRole, (newRole) => {
-  if (newRole === lastNarratedRole.value) return
-  lastNarratedRole.value = newRole
-
-  switch (newRole) {
-    case 'seer':
-      narrate.seerWake()
-      break
-    case 'werewolf':
-      narrate.werewolvesWake()
-      break
-    case 'witch':
-      narrate.witchWake()
-      break
-  }
-}, { immediate: true })
 
 /* --- Methods --- */
 function onActionDone() {
@@ -226,8 +202,8 @@ function onSeerResult(result: { name: string; role: string; emoji: string }) {
           </div>
         </template>
 
-        <!-- Waiting State -->
-        <template v-else>
+        <!-- Waiting State (only shown for dead players or after acting) -->
+        <template v-else-if="waitMessage">
           <div class="flex-1 flex flex-col items-center justify-center py-12 animate-fade-up">
             <div class="text-center">
               <!-- Wait icon -->
@@ -238,9 +214,13 @@ function onSeerResult(result: { name: string; role: string; emoji: string }) {
 
               <!-- Subtitle -->
               <p class="text-lg text-white/40">{{ waitMessage.subtitle }}</p>
-
             </div>
           </div>
+        </template>
+
+        <!-- Default: Just show the role header (already displayed above) -->
+        <template v-else>
+          <div class="flex-1" />
         </template>
       </div>
     </div>

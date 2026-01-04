@@ -6,8 +6,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, GameSettings } from '../../shared/types/database.types'
 import { DEFAULT_SETTINGS, calculateRoles, shuffleArray } from '../../shared/config/game.config'
-import { getPhaseEndTime, getDefaultSettings, getFirstNightRole } from './engine'
+import { getPhaseEndTime, getDefaultSettings, startNightPhase } from './engine'
 import * as db from '../services/database'
+import { generateNarration } from '../services/narration'
 
 type Game = Database['public']['Tables']['games']['Row']
 type Player = Database['public']['Tables']['players']['Row']
@@ -345,7 +346,8 @@ export async function startGame(
   client: SupabaseClient<Database>,
   game: Game,
   hostPlayer: Player,
-  allPlayers: Player[]
+  allPlayers: Player[],
+  geminiApiKey?: string
 ): Promise<StartGameResult> {
   // Validate host
   if (game.host_id !== hostPlayer.id && !hostPlayer.is_host) {
@@ -377,11 +379,23 @@ export async function startGame(
 
   await Promise.all(updatePromises)
 
-  // Start with intro phase
+  // Generate intro narration using AI
+  const playerNames = allPlayers.map(p => p.name)
+  const narration = await generateNarration('night_intro', {
+    gameId: game.id,
+    dayNumber: 1,
+    playerCount: allPlayers.length,
+    aliveCount: allPlayers.length,
+    playerNames,
+    isFirstNight: true
+  }, geminiApiKey)
+
+  // Start with night_intro phase (no timer, blocking narration)
   const { error: updateError } = await client.from('games').update({
-    status: 'intro',
+    status: 'night_intro',
     day_number: 1,
-    phase_end_at: null
+    phase_end_at: null,
+    narration_text: narration
   }).eq('id', game.id)
 
   if (updateError) {
@@ -397,7 +411,7 @@ export async function startGame(
 }
 
 /* ═══════════════════════════════════════════
-   START NIGHT (from intro)
+   START NIGHT (from night_intro)
    ═══════════════════════════════════════════ */
 
 export interface StartNightResult {
@@ -410,26 +424,67 @@ export async function startNight(
   client: SupabaseClient<Database>,
   game: Game
 ): Promise<StartNightResult> {
-  if (game.status !== 'intro') {
+  if (game.status !== 'night_intro') {
     return { success: true, alreadyStarted: true }
   }
 
-  // Get players to determine first night role
-  const players = await db.getPlayers(client, game.id)
-  const firstNightRole = getFirstNightRole(players)
+  await startNightPhase(client, game)
+  return { success: true }
+}
 
-  const settings = (game.settings as unknown as GameSettings) || getDefaultSettings()
-  const phaseEndAt = getPhaseEndTime(settings, 'night')
+/* ═══════════════════════════════════════════
+   RESTART GAME
+   ═══════════════════════════════════════════ */
 
-  await client.from('games').update({
-    status: 'night',
-    phase_end_at: phaseEndAt.toISOString(),
-    current_night_role: firstNightRole
-  }).eq('id', game.id)
+export interface RestartGameResult {
+  success: boolean
+  error?: string
+}
 
-  await db.createGameEvent(client, game.id, 'night_start',
-    'Nuit 1 - Les créatures de la nuit s\'éveillent...',
-    { day_number: 1 })
+export async function restartGame(
+  client: SupabaseClient<Database>,
+  game: Game,
+  hostPlayer: Player
+): Promise<RestartGameResult> {
+  // Validate host
+  if (game.host_id !== hostPlayer.id && !hostPlayer.is_host) {
+    return { success: false, error: 'Seul l\'hôte peut relancer la partie' }
+  }
+
+  if (game.status !== 'finished') {
+    return { success: false, error: 'La partie n\'est pas terminée' }
+  }
+
+  // Clear all game data
+  await Promise.all([
+    client.from('night_actions').delete().eq('game_id', game.id),
+    client.from('day_votes').delete().eq('game_id', game.id),
+    client.from('day_ready').delete().eq('game_id', game.id),
+    client.from('game_events').delete().eq('game_id', game.id)
+  ])
+
+  // Reset all players
+  await client
+    .from('players')
+    .update({ role: null, is_alive: true })
+    .eq('game_id', game.id)
+
+  // Reset game state
+  const { error: updateError } = await client
+    .from('games')
+    .update({
+      status: 'lobby',
+      day_number: 0,
+      winner: null,
+      phase_end_at: null,
+      narration_text: null,
+      current_night_role: null
+    })
+    .eq('id', game.id)
+
+  if (updateError) {
+    return { success: false, error: `Erreur DB: ${updateError.message}` }
+  }
 
   return { success: true }
 }
