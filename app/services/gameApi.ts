@@ -22,6 +22,11 @@ export interface CreateResponse {
   gameId: string
 }
 
+export interface ExistsResponse {
+  exists: boolean
+  status?: string
+}
+
 export interface ActionResponse {
   success: boolean
   revealedRole?: string
@@ -53,6 +58,13 @@ export interface StartResponse {
 export async function createGame(): Promise<CreateResponse> {
   return await $fetch('/api/game/create', {
     method: 'POST'
+  })
+}
+
+export async function checkGameExists(code: string): Promise<ExistsResponse> {
+  return await $fetch('/api/game/exists', {
+    method: 'GET',
+    query: { code: code.toUpperCase() }
   })
 }
 

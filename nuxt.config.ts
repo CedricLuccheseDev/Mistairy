@@ -1,5 +1,38 @@
+import { execSync } from 'child_process'
+import { existsSync, readFileSync } from 'fs'
+import pkg from './package.json'
+
+function getVersion(): string {
+  // 1. Use APP_VERSION from CI/CD if available
+  if (process.env.APP_VERSION) {
+    return process.env.APP_VERSION
+  }
+
+  // 2. Read from .version file (created by CI)
+  try {
+    if (existsSync('.version')) {
+      return readFileSync('.version', 'utf-8').trim()
+    }
+  }
+  catch { /* ignore */ }
+
+  // 3. Try git describe (dev only)
+  try {
+    return execSync('git describe --tags --abbrev=0 2>/dev/null').toString().trim()
+  }
+  catch { /* ignore */ }
+
+  // 4. Fallback to package.json
+  return `v${pkg.version}`
+}
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  vite: {
+    define: {
+      __APP_VERSION__: JSON.stringify(getVersion())
+    }
+  },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
 

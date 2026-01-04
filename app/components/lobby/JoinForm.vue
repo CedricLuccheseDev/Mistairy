@@ -2,6 +2,9 @@
 import type { Game, Player } from '#shared/types/game'
 import * as gameApi from '~/services/gameApi'
 
+/* --- Composables --- */
+const { t } = useI18n()
+
 /* --- Props --- */
 const props = defineProps<{
   game: Game
@@ -26,7 +29,7 @@ const joinError = ref('')
 /* --- Methods --- */
 async function joinGame() {
   if (!joinName.value.trim()) {
-    joinError.value = 'Entre ton prénom'
+    joinError.value = t.value.enterFirstName
     return
   }
 
@@ -43,7 +46,7 @@ async function joinGame() {
   }
   catch (e: unknown) {
     const fetchError = e as { data?: { message?: string } }
-    joinError.value = fetchError.data?.message || 'Erreur lors de la connexion'
+    joinError.value = fetchError.data?.message || t.value.connectionError
   }
   finally {
     isJoining.value = false
@@ -63,12 +66,12 @@ async function joinWithGoogle() {
     })
 
     if (authError) {
-      joinError.value = 'Erreur de connexion Google'
+      joinError.value = t.value.googleAuthError
       console.error('Google auth error:', authError)
     }
   }
   catch (e) {
-    joinError.value = 'Erreur de connexion Google'
+    joinError.value = t.value.googleAuthError
     console.error('Google auth error:', e)
   }
   finally {
@@ -93,7 +96,7 @@ async function joinWithGoogle() {
         class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
       >
         <span class="text-lg">←</span>
-        <span class="text-sm">Retour</span>
+        <span class="text-sm">{{ t.back }}</span>
       </NuxtLink>
     </div>
 
@@ -116,7 +119,7 @@ async function joinWithGoogle() {
                 +{{ players.length - 4 }}
               </div>
             </div>
-            <span class="text-neutral-400 text-sm">{{ players.length }} joueur{{ players.length > 1 ? 's' : '' }} en attente</span>
+            <span class="text-neutral-400 text-sm">{{ players.length }} {{ t.playersWaiting }}</span>
           </div>
         </div>
 
@@ -128,12 +131,12 @@ async function joinWithGoogle() {
               <div class="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center text-xl">
                 ✏️
               </div>
-              <p class="text-white font-medium">Entre ton prénom</p>
+              <p class="text-white font-medium">{{ t.enterFirstName }}</p>
             </div>
             <input
               v-model="joinName"
               type="text"
-              placeholder="Prénom"
+              :placeholder="t.firstName"
               autofocus
               class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-center text-lg placeholder-neutral-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
               @keyup.enter="joinGame"
@@ -143,14 +146,14 @@ async function joinWithGoogle() {
               :disabled="isJoining || !joinName.trim()"
               @click="joinGame"
             >
-              {{ isJoining ? 'Connexion...' : 'Rejoindre la partie' }}
+              {{ isJoining ? t.joining : t.joinTheGame }}
             </button>
           </div>
 
           <!-- Divider -->
           <div class="flex items-center gap-4">
             <div class="flex-1 h-px bg-white/10" />
-            <span class="text-neutral-500 text-sm">ou</span>
+            <span class="text-neutral-500 text-sm">{{ t.or }}</span>
             <div class="flex-1 h-px bg-white/10" />
           </div>
 
@@ -171,9 +174,9 @@ async function joinWithGoogle() {
               </div>
               <div class="flex-1 text-left">
                 <p class="text-white font-semibold group-hover:text-violet-200 transition-colors">
-                  {{ isGoogleLoading ? 'Connexion...' : 'Continuer avec Google' }}
+                  {{ isGoogleLoading ? t.joining : t.continueWithGoogle }}
                 </p>
-                <p class="text-neutral-500 text-sm">Connexion rapide avec ton compte</p>
+                <p class="text-neutral-500 text-sm">{{ t.quickGoogleLogin }}</p>
               </div>
               <div v-if="!isGoogleLoading" class="text-neutral-400 group-hover:translate-x-1 transition-transform">→</div>
               <div v-else class="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
@@ -192,13 +195,13 @@ async function joinWithGoogle() {
         <div v-else class="text-center animate-fade-up">
           <div class="p-6 rounded-3xl bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm">
             <div class="text-5xl mb-4">🎮</div>
-            <p class="text-orange-400 font-semibold mb-2">Partie en cours</p>
-            <p class="text-neutral-400 text-sm mb-4">Tu ne peux plus rejoindre cette partie</p>
+            <p class="text-orange-400 font-semibold mb-2">{{ t.gameInProgress }}</p>
+            <p class="text-neutral-400 text-sm mb-4">{{ t.cannotJoinGame }}</p>
             <NuxtLink
               to="/"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all"
             >
-              ← Retour à l'accueil
+              ← {{ t.backToHome }}
             </NuxtLink>
           </div>
         </div>

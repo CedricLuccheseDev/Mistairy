@@ -3,6 +3,17 @@ import { ROLES_CONFIG } from '#shared/config/roles.config'
 import { PHASE_CHECK_INTERVAL_MS, PHASE_END_BUFFER_MS } from '#shared/config/constants'
 import * as gameApi from '~/services/gameApi'
 
+/* --- Composables --- */
+const { t } = useI18n()
+
+/* --- Meta --- */
+definePageMeta({
+  layoutConfig: {
+    showHeader: false,
+    showFooter: false
+  }
+})
+
 /* --- Route --- */
 const route = useRoute()
 const gameCode = route.params.code as string
@@ -382,7 +393,7 @@ onUnmounted(() => {
         </div>
         <!-- Animated loading text -->
         <div class="flex items-center justify-center gap-1.5">
-          <span class="text-indigo-400 text-sm">Chargement</span>
+          <span class="text-indigo-400 text-sm">{{ t.loading.replace('...', '') }}</span>
           <span class="flex gap-0.5">
             <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0ms" />
             <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 150ms" />
@@ -396,7 +407,7 @@ onUnmounted(() => {
     <div v-else-if="error" class="flex flex-col items-center justify-center min-h-screen p-6">
       <div class="text-6xl mb-4">😵</div>
       <p class="text-red-400 mb-6 text-center">{{ error }}</p>
-      <UButton to="/" color="neutral" variant="outline" size="lg">Retour</UButton>
+      <UButton to="/" color="neutral" variant="outline" size="lg">{{ t.back }}</UButton>
     </div>
 
     <!-- Join Form -->
@@ -533,7 +544,7 @@ onUnmounted(() => {
           </div>
           <h2 class="text-2xl font-bold text-white mb-1">{{ roleInfo.name }}</h2>
           <p class="text-sm mb-4" :class="roleInfo.team === 'werewolf' ? 'text-red-400' : 'text-violet-400'">
-            {{ roleInfo.team === 'werewolf' ? 'Équipe Loups-Garous' : 'Équipe Village' }}
+            {{ roleInfo.team === 'werewolf' ? t.teamWerewolf : t.teamVillage }}
           </p>
           <p class="text-neutral-400 text-sm mb-6">{{ roleInfo.description }}</p>
 
@@ -541,7 +552,7 @@ onUnmounted(() => {
             v-if="currentPlayer?.role === 'werewolf' && otherWerewolves.length > 0"
             class="mb-6 p-4 rounded-xl bg-red-950/30 border border-red-800/30"
           >
-            <p class="text-xs text-red-400 mb-2">🐺 Ta meute</p>
+            <p class="text-xs text-red-400 mb-2">🐺 {{ t.yourPack }}</p>
             <div class="flex flex-wrap gap-2 justify-center">
               <span
                 v-for="wolf in otherWerewolves"
@@ -557,7 +568,7 @@ onUnmounted(() => {
             class="w-full px-6 py-3 rounded-xl bg-violet-600 text-white font-semibold hover:bg-violet-500 transition-colors"
             @click="showRoleModal = false"
           >
-            Compris
+            {{ t.understood }}
           </button>
         </div>
       </template>
@@ -567,7 +578,7 @@ onUnmounted(() => {
       <template #content>
         <div class="p-4">
           <div class="flex items-center justify-between mb-4">
-            <h3 class="font-semibold text-white">Joueurs ({{ alivePlayers.length }}/{{ players.length }})</h3>
+            <h3 class="font-semibold text-white">{{ t.players }} ({{ alivePlayers.length }}/{{ players.length }})</h3>
             <button class="text-neutral-500 hover:text-white text-xl" @click="showPlayersModal = false">x</button>
           </div>
           <GamePlayersList
@@ -583,7 +594,7 @@ onUnmounted(() => {
       <template #content>
         <div class="p-4">
           <div class="flex items-center justify-between mb-4">
-            <h3 class="font-semibold text-white">Journal</h3>
+            <h3 class="font-semibold text-white">{{ t.journal }}</h3>
             <button class="text-neutral-500 hover:text-white text-xl" @click="showEventsModal = false">x</button>
           </div>
           <GameEventLog :events="events" />
@@ -595,7 +606,7 @@ onUnmounted(() => {
       <template #content>
         <div class="p-4">
           <div class="flex items-center justify-between mb-4">
-            <h3 class="font-semibold text-white">Configuration</h3>
+            <h3 class="font-semibold text-white">{{ t.configuration }}</h3>
             <button class="text-neutral-500 hover:text-white text-xl" @click="showConfigModal = false">x</button>
           </div>
           <LobbyGameConfig
